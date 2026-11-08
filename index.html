@@ -23,6 +23,7 @@ ensureChunksAround(new THREE.Vector3(0,0,0));
 
 // Dynamic Miss Circle navigation: grid follows the generated world, not the original map bounds.
 const navCell=5,navNodes=new Map(),gridChunks=new Set(),raycaster=new THREE.Raycaster();
+const navCenter=new THREE.Vector3(0,0,0);
 function cellKey(ix,iz){return ix+','+iz}
 function cellPos(ix,iz){return new THREE.Vector3(ix*navCell,0,iz*navCell)}
 function clearBridge(a,b){const d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}

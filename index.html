@@ -18,7 +18,7 @@ const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const flo
 function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],wallMeshes=[],chunks=new Map(),CHUNK=20;let navDirty=true;
 function makeChunk(cx,cz){const id=cx+','+cz;if(chunks.has(id))return;chunks.set(id,true);navDirty=true;for(let ax=0;ax<2;ax++)for(let az=0;az<2;az++){let gx=cx*2+ax,gz=cz*2+az,x=gx*10,z=gz*10;/* Continuous ground beneath every room and corridor tile */block(x,-.16,z,10,.3,10,floorMat,false);if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){block(x,1.5,z-4.5,9,3,.25,wallMat);block(x-4.5,1.5,z,.25,3,9,wallMat);block(x+4.5,1.5,z,.25,3,9,wallMat);if(Math.random()>.35)block(x-1.8,1.5,z+4.5,2.8,3,.25,wallMat);if(Math.random()>.35)block(x+2,1.5,z+4.5,4,3,.25,wallMat);}}}
-function ensureChunksAround(p){let cx=Math.floor(p.x/CHUNK),cz=Math.floor(p.z/CHUNK);for(let x=cx-2;x<=cx+2;x++)for(let z=cz-2;z<=cz+2;z++)makeChunk(x,z);navDirty=true}
+function ensureChunksAround(p){let cx=Math.floor(p.x/CHUNK),cz=Math.floor(p.z/CHUNK),before=chunks.size;for(let x=cx-2;x<=cx+2;x++)for(let z=cz-2;z<=cz+2;z++)makeChunk(x,z);if(chunks.size!==before)navDirty=true}
 ensureChunksAround(new THREE.Vector3(0,0,0));
 
 // Dynamic Miss Circle navigation: grid follows the generated world, not the original map bounds.
@@ -85,7 +85,7 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random
 let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
-if(circle){ensureChunksAround(circle.position);if(navNodes.size===0||navDirty||circle.position.distanceTo(navCenter)>35){navCenter.copy(circle.position);rebuildNav(navCenter);pathTimer=0;circlePath=[];pathIndex=0;pathGoal=null;}let cp=circle.position,dist=cp.distanceTo(player.pos);
+if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone().add(circle.position).multiplyScalar(.5);if(navNodes.size===0||navDirty||gridCenter.distanceTo(navCenter)>25){navCenter.copy(gridCenter);rebuildNav(navCenter);pathTimer=0;circlePath=[];pathIndex=0;pathGoal=null;}let cp=circle.position,dist=cp.distanceTo(player.pos);
 setChaseVisual(mode==='chase');if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
 else if(mode==='oreo'&&throwTarget){let d=cp.distanceTo(throwTarget);if(d>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='investigate';failedAt=throwTarget.clone();throwTarget=null;document.querySelector('#status').textContent='Miss Circle investigates the Oreo!'}}
 else if(mode==='chase'){moveCircleToward(player.pos,10.5,dt);playAnim('run');if(dist<1.35){playAnim('attack');dead=true;hud()}}

@@ -6,9 +6,10 @@
 <div id="hud"><b>FPE: TEST NIGHT</b><div id="stats">Papers: 0 · Oreos: 0</div><div id="status">Stay alert…</div><div id="msg"></div></div>
 <div id="help">WASD move · Mouse look · E collect paper/Oreo · Q throw Oreo · Shift sprint</div>
 <div id="overlay"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><p>Find test papers around the procedural school. Complete them before Miss Circle notices.</p><p>Fail a test and she investigates your last position… then hunts you.</p><p>Oreos can distract her. Collect with <b>E</b>, throw with <b>Q</b>.</p><button id="start">ENTER SCHOOL</button></div></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"}}</script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js';
-import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/loaders/GLTFLoader.js';
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x9ba8b9);scene.fog=new THREE.Fog(0x9ba8b9,35,105);
 const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);

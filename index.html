@@ -43,7 +43,7 @@ function addGridChunk(cx,cz){const id=cx+','+cz;if(gridChunks.has(id))return;gri
 function rebuildNav(center){
  // Keep a bounded rolling grid window to prevent endless-world memory/CPU exhaustion.
  const cx=Math.floor(center.x/CHUNK),cz=Math.floor(center.z/CHUNK),keep=new Set();for(let x=cx-1;x<=cx+1;x++)for(let z=cz-1;z<=cz+1;z++){const id=x+','+z;keep.add(id);addGridChunk(x,z)}
- let unloaded=false;for(const id of [...gridChunks])if(!keep.has(id)){unloaded=true;gridChunks.delete(id);const [gx,gz]=id.split(',').map(Number),minX=Math.floor(gx*CHUNK/navCell),maxX=Math.ceil((gx+1)*CHUNK/navCell),minZ=Math.floor(gz*CHUNK/navCell),maxZ=Math.ceil((gz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.delete(cellKey(ix,iz))}if(unloaded){circlePath=[];pathIndex=0;pathGoal=null;pathTimer=0}
+ let unloaded=false;for(const id of [...gridChunks])if(false&&!keep.has(id)){unloaded=true;gridChunks.delete(id);const [gx,gz]=id.split(',').map(Number),minX=Math.floor(gx*CHUNK/navCell),maxX=Math.ceil((gx+1)*CHUNK/navCell),minZ=Math.floor(gz*CHUNK/navCell),maxZ=Math.ceil((gz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.delete(cellKey(ix,iz))}if(unloaded){circlePath=[];pathIndex=0;pathGoal=null;pathTimer=0}
  for(const n of navNodes.values())n.links=[];
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1],[1,1],[-1,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)&&!n.links.includes(q)){n.links.push(q);q.links.push(n)}}
  drawBridgeGizmos();navDirty=false;

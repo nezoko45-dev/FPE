@@ -49,14 +49,31 @@ function rebuildNav(center){
  drawBridgeGizmos();navDirty=false;
 }
 function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
-function findPath(from,to){
- const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
- // Distance-priority traversal of connected ray bridges; no BFS.
- const key=n=>cellKey(n.ix,n.iz),dist=new Map([[key(start),0]]),prev=new Map(),open=new Set([key(start)]),nodes=new Map([[key(start),start]]);
- while(open.size){let bk=null,bd=Infinity;for(const k of open){const d=dist.get(k);if(d<bd){bd=d;bk=k}}if(bk===key(goal))break;open.delete(bk);const cur=nodes.get(bk);for(const next of cur.links){const nk=key(next),nd=bd+cur.p.distanceTo(next.p);if(nd<(dist.get(nk)??Infinity)){dist.set(nk,nd);prev.set(nk,bk);nodes.set(nk,next);open.add(nk)}}}
- const g=key(goal);if(!dist.has(g))return [];const route=[];let k=g;while(k!==undefined){const n=navNodes.get(k);if(!n)return [];route.push(n.p.clone());k=prev.get(k)}route.reverse();return route;
-}
+// Ray-bridge steering only: no route search or stored path.
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
+function moveCircleToward(target,speed,dt){
+ const here=nearestNode(circle.position),goal=nearestNode(target);
+ let waypoint=null;
+ if(here&&goal){
+  const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));
+  candidates.sort((a,b)=>{
+   const da=a.p.distanceToSquared(goal.p),db=b.p.distanceToSquared(goal.p);
+   return da-db;
+  });
+  waypoint=candidates[0]?.p||null;
+ }
+ // Only take a direct bridge when ray-clear; otherwise follow a connected cell bridge.
+ if(!waypoint&&clearBridge(circle.position,target))waypoint=target;
+ if(!waypoint)return;
+ const delta=waypoint.clone().sub(circle.position).setY(0);
+ if(delta.lengthSq()>1e-6){
+  const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));
+  circle.position.add(step);
+  const desired=Math.atan2(step.x,step.z);
+  let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  circle.rotation.y+=diff*Math.min(1,dt*8);
+ }
+}let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
 function moveCircleToward(target,speed,dt){pathTimer-=dt;const targetChanged=!pathGoal||pathGoal.distanceTo(target)>3;const routeMissing=pathIndex>=circlePath.length;if(targetChanged||routeMissing){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=mode==='chase'?1:999}
  while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
  let waypoint=pathIndex<circlePath.length?circlePath[pathIndex]:null;
@@ -88,11 +105,11 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random
 let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
-if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);pathTimer=0;circlePath=[];pathIndex=0;pathGoal=null;}bridgeViz.position.set(0,0,0);let cp=circle.position,dist=cp.distanceTo(player.pos);
+if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);let cp=circle.position,dist=cp.distanceTo(player.pos);
 setChaseVisual(mode==='chase');if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
 else if(mode==='oreo'&&throwTarget){let d=cp.distanceTo(throwTarget);if(d>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='investigate';failedAt=throwTarget.clone();throwTarget=null;document.querySelector('#status').textContent='Miss Circle investigates the Oreo!'}}
 else if(mode==='chase'){moveCircleToward(player.pos,10.5,dt);playAnim('run');if(dist<1.35){playAnim('attack');dead=true;hud()}}
-else if(mode==='calm'){if(dist<14){mode='chase';pathTimer=0;circlePath=[];playAnim('run')}}}
+else if(mode==='calm'){if(dist<14){mode='chase';playAnim('run')}}}
 }
 function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);update(dt);renderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.

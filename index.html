@@ -50,18 +50,13 @@ function rebuildNav(center){
 function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 function findPath(from,to){
  const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
- // Breadth-first traversal of the homemade ray-bridge grid: guarantees a connected,
- // non-greedy route and avoids the dead-end/sideways oscillation of nearest-neighbor walks.
- const key=n=>cellKey(n.ix,n.iz),queue=[start],cameFrom=new Map([[key(start),null]]);let head=0;
- while(head<queue.length){const cur=queue[head++];if(cur===goal)break;
-  for(const next of cur.links){const k=key(next);if(cameFrom.has(k))continue;cameFrom.set(k,key(cur));queue.push(next)}
- }
- if(!cameFrom.has(key(goal)))return [];
- const route=[];let k=key(goal);while(k!==null){const n=navNodes.get(k);if(!n)return [];route.push(n.p.clone());k=cameFrom.get(k)}
- route.reverse();return route;
+ // Distance-priority traversal of connected ray bridges; no BFS.
+ const key=n=>cellKey(n.ix,n.iz),dist=new Map([[key(start),0]]),prev=new Map(),open=new Set([key(start)]),nodes=new Map([[key(start),start]]);
+ while(open.size){let bk=null,bd=Infinity;for(const k of open){const d=dist.get(k);if(d<bd){bd=d;bk=k}}if(bk===key(goal))break;open.delete(bk);const cur=nodes.get(bk);for(const next of cur.links){const nk=key(next),nd=bd+cur.p.distanceTo(next.p);if(nd<(dist.get(nk)??Infinity)){dist.set(nk,nd);prev.set(nk,bk);nodes.set(nk,next);open.add(nk)}}}
+ const g=key(goal);if(!dist.has(g))return [];const route=[];let k=g;while(k!==undefined){const n=navNodes.get(k);if(!n)return [];route.push(n.p.clone());k=prev.get(k)}route.reverse();return route;
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
-function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=.35}
+function moveCircleToward(target,speed,dt){pathTimer-=dt;const targetChanged=!pathGoal||pathGoal.distanceTo(target)>3;const routeMissing=pathIndex>=circlePath.length;if(targetChanged||routeMissing||(mode==='chase'&&pathTimer<=0)){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=mode==='chase'?1:999}
  while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
  let waypoint=pathIndex<circlePath.length?circlePath[pathIndex]:null;
  // Greedy graph traversal can dead-end on generated walls; recover with a fresh local bridge instead of freezing.

@@ -60,9 +60,12 @@ function findPath(from,to){
  return cur===goal?route.map(n=>n.p.clone()):[];
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
-function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}pathGoal=target.clone();pathTimer=.8}
- if(!circlePath.length)return;while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.35)pathIndex++;
- if(pathIndex>=circlePath.length)return;const waypoint=circlePath[pathIndex],delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
+function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=.35}
+ while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
+ let waypoint=pathIndex<circlePath.length?circlePath[pathIndex]:null;
+ // Greedy graph traversal can dead-end on generated walls; recover with a fresh local bridge instead of freezing.
+ if(!waypoint){const here=nearestNode(circle.position),goal=nearestNode(target);if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p)).sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));waypoint=candidates[0]?.p||null}if(!waypoint&&clearBridge(circle.position,target))waypoint=target}
+ if(!waypoint)return;const delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null;

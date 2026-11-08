@@ -36,7 +36,22 @@ function buildNav(){navNodes.clear();let count=Math.round((navMax-navMin)/navCel
 for(let n of navNodes.values())for(let [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){let q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p))n.links.push(q)}
 }
 function nearestNode(p){let ix=Math.round((p.x-navMin)/navCell),iz=Math.round((p.z-navMin)/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
-function findPath(from,to){let start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];let prev=new Map(),queue=[start],seen=new Set([start]);while(queue.length){let n=queue.shift();if(n===goal)break;for(let q of n.links)if(!seen.has(q)){seen.add(q);prev.set(q,n);queue.push(q)}}if(!seen.has(goal))return [];let path=[],n=goal;while(n&&n!==start){path.unshift(n.p);n=prev.get(n)}return path}
+function findPath(from,to){
+ // Homemade greedy steering: try a straight ray, otherwise step toward the goal
+ // through whichever nearby cell is open and makes the most progress.
+ let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];
+ let route=[],visited=new Set(),limit=500;
+ while(cur!==goal&&limit--){
+   let key=cellKey(cur.ix,cur.iz);if(visited.has(key))break;visited.add(key);
+   if(clearBridge(cur.p,to)){route.push(to.clone());break}
+   let candidates=cur.links.filter(n=>!visited.has(cellKey(n.ix,n.iz)));
+   candidates.sort((a,b)=>a.p.distanceTo(to)-b.p.distanceTo(to));
+   if(!candidates.length)break;
+   cur=candidates[0];route.push(cur.p.clone());
+ }
+ if(cur===goal)route.push(to.clone());
+ return route;
+}
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0;
 function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.6}
 while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.65)pathIndex++;

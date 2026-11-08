@@ -28,11 +28,18 @@ function cellPos(ix,iz){return new THREE.Vector3(ix*navCell,0,iz*navCell)}
 function clearBridge(a,b){const d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}
 // Bridge gizmos: green = connected cell rays, red = blocked neighbor rays.
 const bridgeViz=new THREE.Group();scene.add(bridgeViz);let bridgeLines=null,showBridgeGizmos=true;
-function drawBridgeGizmos(){bridgeViz.clear();if(!showBridgeGizmos)return;const good=[],bad=[];for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(!q)continue;const arr=clearBridge(n.p,q.p)?good:bad;arr.push(n.p.x,.12,n.p.z,q.p.x,.12,q.p.z)}if(good.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(good,3));bridgeViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x33ff77,transparent:true,opacity:.65})))}if(bad.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(bad,3));bridgeViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xff3344,transparent:true,opacity:.45})))}}
+function drawBridgeGizmos(){
+ bridgeViz.clear();if(!showBridgeGizmos)return;
+ const pts=[];
+ // Use already-computed navigation links; do not perform thousands of extra raycasts.
+ for(const n of navNodes.values())for(const q of n.links){if(n.ix<q.ix||(n.ix===q.ix&&n.iz<q.iz))pts.push(n.p.x,.12,n.p.z,q.p.x,.12,q.p.z)}
+ if(pts.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));bridgeViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x33ff77,transparent:true,opacity:.55})))}
+}
 function rebuildNav(center){
- navNodes.clear();const minX=Math.floor((center.x-65)/navCell),maxX=Math.ceil((center.x+65)/navCell),minZ=Math.floor((center.z-65)/navCell),maxZ=Math.ceil((center.z+65)/navCell);
+ navNodes.clear();const minX=Math.floor((center.x-35)/navCell),maxX=Math.ceil((center.x+35)/navCell),minZ=Math.floor((center.z-35)/navCell),maxZ=Math.ceil((center.z+35)/navCell);
  for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p))n.links.push(q)}
+ drawBridgeGizmos();
 }
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
 function findPath(from,to){let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];let route=[],seen=new Set(),limit=700;while(cur!==goal&&limit--){let k=cellKey(cur.ix,cur.iz);if(seen.has(k))break;seen.add(k);let choices=cur.links.filter(n=>!seen.has(cellKey(n.ix,n.iz)));choices.sort((a,b)=>a.p.distanceTo(goal.p)-b.p.distanceTo(goal.p));if(!choices.length)break;cur=choices[0];route.push(cur.p.clone())}if(cur===goal)route.push(goal.p.clone());return route}

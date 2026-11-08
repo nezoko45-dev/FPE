@@ -56,14 +56,33 @@ function rebuildNav(center){
  if(showBridgeGizmos)drawBridgeGizmos();navDirty=false;
 }
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
-// Ray-bridge steering only: no path search or stored route.
+// Ray-bridge steering only. Hold each selected bridge waypoint to prevent frame-to-frame jitter.
+let circleWaypoint=null;
 function moveCircleToward(target,speed,dt){
- const here=nearestNode(circle.position),goal=nearestNode(target);let waypoint=null;
- if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));waypoint=candidates[0]?.p||null}
- if(!waypoint&&clearBridge(circle.position,target))waypoint=target;
- if(!waypoint)return;
- const delta=waypoint.clone().sub(circle.position).setY(0);
- if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}
+ const here=nearestNode(circle.position),goal=nearestNode(target);
+ // If target is directly visible, prefer the straight ray and clear any stale waypoint.
+ if(clearBridge(circle.position,target))circleWaypoint=target.clone();
+ else{
+  // Keep a chosen node until reached; only replace it if blocked or arrived.
+  if(circleWaypoint&&circle.position.distanceTo(circleWaypoint)>1.25&&clearBridge(circle.position,circleWaypoint)){}
+  else{
+   circleWaypoint=null;
+   if(here&&goal){
+    const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));
+    candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));
+    circleWaypoint=candidates[0]?.p.clone()||null;
+   }
+  }
+ }
+ if(!circleWaypoint)return;
+ const delta=circleWaypoint.clone().sub(circle.position).setY(0),distance=delta.length();
+ if(distance>1e-4){
+  const step=delta.normalize().multiplyScalar(Math.min(speed*dt,distance));
+  circle.position.add(step);
+  const desired=Math.atan2(step.x,step.z);
+  let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  circle.rotation.y+=diff*Math.min(1,dt*5);
+ }
 }
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);

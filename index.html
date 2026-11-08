@@ -45,11 +45,12 @@ function rebuildNav(center){
  // Permanently retain grid chunks; only connect newly-created cells and their neighbors.
  const cx=Math.floor(center.x/CHUNK),cz=Math.floor(center.z/CHUNK);
  for(let x=cx-1;x<=cx+1;x++)for(let z=cz-1;z<=cz+1;z++)addGridChunk(x,z);
+ // Recheck every cell on each rebuild so newly streamed cells connect to old cells too.
+ // Eight ray directions: cardinal + diagonal neighbors.
  for(const n of navNodes.values()){
-  if(n.links.length)continue;
-  for(const [dx,dz] of [[1,0],[0,1],[1,1],[-1,1]]){
+  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
    const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));
-   if(q&&clearBridge(n.p,q.p)){if(!n.links.includes(q))n.links.push(q);if(!q.links.includes(n))q.links.push(n)}
+   if(q&&clearBridge(n.p,q.p)&&!n.links.includes(q))n.links.push(q);
   }
  }
  if(showBridgeGizmos)drawBridgeGizmos();navDirty=false;

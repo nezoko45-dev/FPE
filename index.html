@@ -39,7 +39,7 @@ function drawBridgeGizmos(){
 }
 function rebuildNav(center){
  // Keep a compact navigation window around Miss Circle; rebuilding the entire endless map caused frame spikes.
- navNodes.clear();const radius=60;
+ navNodes.clear();const radius=100; // Extend ray-grid coverage across the generated floor chunk ring.
  const ix0=Math.floor((center.x-radius)/navCell),ix1=Math.ceil((center.x+radius)/navCell),iz0=Math.floor((center.z-radius)/navCell),iz1=Math.ceil((center.z+radius)/navCell);
  for(let ix=ix0;ix<=ix1;ix++)for(let iz=iz0;iz<=iz1;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)){n.links.push(q);q.links.push(n)}}

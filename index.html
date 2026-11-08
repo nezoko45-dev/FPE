@@ -54,37 +54,15 @@ function rebuildNav(center){
  if(showBridgeGizmos)drawBridgeGizmos();navDirty=false;
 }
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
-// Ray-bridge steering only: no route search or stored path.
-let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
+// Ray-bridge steering only: no path search or stored route.
 function moveCircleToward(target,speed,dt){
- const here=nearestNode(circle.position),goal=nearestNode(target);
- let waypoint=null;
- if(here&&goal){
-  const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));
-  candidates.sort((a,b)=>{
-   const da=a.p.distanceToSquared(goal.p),db=b.p.distanceToSquared(goal.p);
-   return da-db;
-  });
-  waypoint=candidates[0]?.p||null;
- }
- // Only take a direct bridge when ray-clear; otherwise follow a connected cell bridge.
+ const here=nearestNode(circle.position),goal=nearestNode(target);let waypoint=null;
+ if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));waypoint=candidates[0]?.p||null}
  if(!waypoint&&clearBridge(circle.position,target))waypoint=target;
  if(!waypoint)return;
  const delta=waypoint.clone().sub(circle.position).setY(0);
- if(delta.lengthSq()>1e-6){
-  const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));
-  circle.position.add(step);
-  const desired=Math.atan2(step.x,step.z);
-  let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
-  circle.rotation.y+=diff*Math.min(1,dt*8);
- }
+ if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}
 }
-function moveCircleToward(target,speed,dt){pathTimer-=dt;const targetChanged=!pathGoal||pathGoal.distanceTo(target)>3;const routeMissing=pathIndex>=circlePath.length;if(targetChanged||routeMissing){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=mode==='chase'?1:999}
- while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
- let waypoint=pathIndex<circlePath.length?circlePath[pathIndex]:null;
- // Greedy graph traversal can dead-end on generated walls; recover with a fresh local bridge instead of freezing.
- if(!waypoint){const here=nearestNode(circle.position),goal=nearestNode(target);if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p)).sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));waypoint=candidates[0]?.p||null}if(!waypoint&&clearBridge(circle.position,target))waypoint=target}
- if(!waypoint)return;const delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0;

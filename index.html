@@ -15,56 +15,27 @@ const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xe5efff,0x514638,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const floorMat=mat(0xaaa7a0),wallMat=mat(0xd8d4c9),trimMat=mat(0x625c5a);
-function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
+function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],chunks=new Map(),CHUNK=20;
 function makeChunk(cx,cz){const id=cx+','+cz;if(chunks.has(id))return;chunks.set(id,true);for(let ax=0;ax<2;ax++)for(let az=0;az<2;az++){let gx=cx*2+ax,gz=cz*2+az,x=gx*10,z=gz*10;if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){block(x,-.02,z,9,.08,9,floorMat,false);block(x,1.5,z-4.5,9,3,.25,wallMat);block(x-4.5,1.5,z,.25,3,9,wallMat);block(x+4.5,1.5,z,.25,3,9,wallMat);if(Math.random()>.35)block(x-1.8,1.5,z+4.5,2.8,3,.25,wallMat);if(Math.random()>.35)block(x+2,1.5,z+4.5,4,3,.25,wallMat);}else block(x,-.02,z,9,.08,9,mat(0x8b8990),false);}}
 function ensureChunksAround(p){let cx=Math.floor(p.x/CHUNK),cz=Math.floor(p.z/CHUNK);for(let x=cx-2;x<=cx+2;x++)for(let z=cz-2;z<=cz+2;z++)makeChunk(x,z)}
 ensureChunksAround(new THREE.Vector3(0,0,0));
 
-// Miss Circle's cell graph: connect adjacent walkable cell centers only when a ray is clear.
-const navCell=2.5,navMin=-47.5,navMax=47.5,navNodes=new Map(),raycaster=new THREE.Raycaster();
-const wallMeshes=[];scene.traverse(o=>{if(o.isMesh&&o.geometry.type==='BoxGeometry'&&o.material===wallMat)wallMeshes.push(o)});
+// Dynamic Miss Circle navigation: grid follows the generated world, not the original map bounds.
+const navCell=2.5,navNodes=new Map(),raycaster=new THREE.Raycaster(),wallMeshes=[];
 function cellKey(ix,iz){return ix+','+iz}
-function cellPos(ix,iz){return new THREE.Vector3(navMin+ix*navCell,0,navMin+iz*navCell)}
-function clearBridge(a,b){let d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}
-function buildNav(){navNodes.clear();let count=Math.round((navMax-navMin)/navCell)+1;for(let ix=0;ix<count;ix++)for(let iz=0;iz<count;iz++){let p=cellPos(ix,iz);navNodes.set(cellKey(ix,iz),{ix,iz,p,links:[]})}
-for(let n of navNodes.values())for(let [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){let q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p))n.links.push(q)}
+function cellPos(ix,iz){return new THREE.Vector3(ix*navCell,0,iz*navCell)}
+function clearBridge(a,b){const d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}
+function rebuildNav(center){
+ navNodes.clear();const minX=Math.floor((center.x-65)/navCell),maxX=Math.ceil((center.x+65)/navCell),minZ=Math.floor((center.z-65)/navCell),maxZ=Math.ceil((center.z+65)/navCell);
+ for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
+ for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p))n.links.push(q)}
 }
-function nearestNode(p){let ix=Math.round((p.x-navMin)/navCell),iz=Math.round((p.z-navMin)/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
-function findPath(from,to){
- // Follow prebuilt cell-to-cell ray bridges only; no live ray toward the target.
- let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];
- let route=[],visited=new Set(),limit=500;
- while(cur!==goal&&limit--){
-   let k=cellKey(cur.ix,cur.iz);if(visited.has(k))break;visited.add(k);
-   let choices=cur.links.filter(n=>!visited.has(cellKey(n.ix,n.iz)));
-   choices.sort((x,y)=>x.p.distanceTo(goal.p)-y.p.distanceTo(goal.p));
-   if(!choices.length)break;
-   cur=choices[0];route.push(cur.p.clone());
- }
- if(cur===goal)route.push(goal.p.clone());
- return route;
-}
-let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0;
-function moveCircleToward(target,speed,dt){
- pathTimer-=dt;
- if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){
-   circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.25;
- }
- while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
- const waypoint=circlePath[pathIndex]||target;
- const delta=waypoint.clone().sub(circle.position).setY(0);
- if(delta.lengthSq()>1e-6){
-   const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));
-   circle.position.add(step);
-   // Smoothly rotate toward travel direction; never snap the model's facing.
-   const desired=Math.atan2(step.x,step.z);
-   let angleDiff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
-   circle.rotation.y+=angleDiff*Math.min(1,dt*8);
- }
-}
-buildNav();
-
+function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
+function findPath(from,to){let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];let route=[],seen=new Set(),limit=700;while(cur!==goal&&limit--){let k=cellKey(cur.ix,cur.iz);if(seen.has(k))break;seen.add(k);let choices=cur.links.filter(n=>!seen.has(cellKey(n.ix,n.iz)));choices.sort((a,b)=>a.p.distanceTo(goal.p)-b.p.distanceTo(goal.p));if(!choices.length)break;cur=choices[0];route.push(cur.p.clone())}if(cur===goal)route.push(goal.p.clone());return route}
+let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
+function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.25}
+ while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;const waypoint=circlePath[pathIndex]||target,delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null;
@@ -85,7 +56,7 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper');lastPaper=elapsed}if(ela
 let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
-if(circle){let cp=circle.position,dist=cp.distanceTo(player.pos);
+if(circle){ensureChunksAround(circle.position);if(circle.position.distanceTo(navCenter)>25){navCenter.copy(circle.position);rebuildNav(navCenter);pathTimer=0;}let cp=circle.position,dist=cp.distanceTo(player.pos);
 if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
 else if(mode==='oreo'&&throwTarget){let d=cp.distanceTo(throwTarget);if(d>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='investigate';failedAt=throwTarget.clone();throwTarget=null;document.querySelector('#status').textContent='Miss Circle investigates the Oreo!'}}
 else if(mode==='chase'){moveCircleToward(player.pos,6.5,dt);playAnim('run');if(dist<1.35){playAnim('attack');dead=true;hud()}}

@@ -27,7 +27,7 @@ function cellKey(ix,iz){return ix+','+iz}
 function cellPos(ix,iz){return new THREE.Vector3(ix*navCell,0,iz*navCell)}
 function clearBridge(a,b){const d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}
 // Bridge gizmos: green = connected cell rays, red = blocked neighbor rays.
-const bridgeViz=new THREE.Group();scene.add(bridgeViz);let bridgeLines=null,showBridgeGizmos=true;
+const bridgeViz=new THREE.Group();scene.add(bridgeViz);let bridgeLines=null,showBridgeGizmos=false;
 function drawBridgeGizmos(){
  // Dispose previous debug geometry/materials so chunk-driven rebuilds do not leak GPU memory.
  for(const o of [...bridgeViz.children]){bridgeViz.remove(o);o.geometry?.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material?.dispose()}
@@ -38,11 +38,9 @@ function drawBridgeGizmos(){
  const cellGeo=new THREE.BoxGeometry(.22,.22,.22),cellMat=new THREE.MeshBasicMaterial({color:0xffe45c});const cells=new THREE.InstancedMesh(cellGeo,cellMat,navNodes.size);const dummy=new THREE.Object3D();let i=0;for(const n of navNodes.values()){dummy.position.set(n.p.x,.16,n.p.z);dummy.updateMatrix();cells.setMatrixAt(i++,dummy.matrix)}cells.instanceMatrix.needsUpdate=true;bridgeViz.add(cells);
 }
 function rebuildNav(center){
- // Build cells across EVERY generated chunk, not a small bubble around Miss Circle.
- navNodes.clear();let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
- for(const id of chunks.keys()){const [cx,cz]=id.split(',').map(Number);minX=Math.min(minX,cx*CHUNK);maxX=Math.max(maxX,(cx+1)*CHUNK);minZ=Math.min(minZ,cz*CHUNK);maxZ=Math.max(maxZ,(cz+1)*CHUNK)}
- if(!Number.isFinite(minX)){navDirty=false;return}
- const ix0=Math.floor(minX/navCell),ix1=Math.ceil(maxX/navCell),iz0=Math.floor(minZ/navCell),iz1=Math.ceil(maxZ/navCell);
+ // Keep a compact navigation window around Miss Circle; rebuilding the entire endless map caused frame spikes.
+ navNodes.clear();const radius=60;
+ const ix0=Math.floor((center.x-radius)/navCell),ix1=Math.ceil((center.x+radius)/navCell),iz0=Math.floor((center.z-radius)/navCell),iz1=Math.ceil((center.z+radius)/navCell);
  for(let ix=ix0;ix<=ix1;ix++)for(let iz=iz0;iz<=iz1;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)){n.links.push(q);q.links.push(n)}}
  drawBridgeGizmos();navDirty=false;
@@ -56,7 +54,7 @@ function findPath(from,to){
  const g=key(goal);if(!dist.has(g))return [];const route=[];let k=g;while(k!==undefined){const n=navNodes.get(k);if(!n)return [];route.push(n.p.clone());k=prev.get(k)}route.reverse();return route;
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
-function moveCircleToward(target,speed,dt){pathTimer-=dt;const targetChanged=!pathGoal||pathGoal.distanceTo(target)>3;const routeMissing=pathIndex>=circlePath.length;if(targetChanged||routeMissing||(mode==='chase'&&pathTimer<=0)){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=mode==='chase'?1:999}
+function moveCircleToward(target,speed,dt){pathTimer-=dt;const targetChanged=!pathGoal||pathGoal.distanceTo(target)>3;const routeMissing=pathIndex>=circlePath.length;if(targetChanged||routeMissing){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=mode==='chase'?1:999}
  while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
  let waypoint=pathIndex<circlePath.length?circlePath[pathIndex]:null;
  // Greedy graph traversal can dead-end on generated walls; recover with a fresh local bridge instead of freezing.
@@ -84,7 +82,7 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random
 let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
-if(circle){ensureChunksAround(circle.position);if(navDirty){navCenter.copy(circle.position);rebuildNav(navCenter);pathTimer=0;circlePath=[];pathIndex=0;}let cp=circle.position,dist=cp.distanceTo(player.pos);
+if(circle){ensureChunksAround(circle.position);if(navNodes.size===0||circle.position.distanceTo(navCenter)>35){navCenter.copy(circle.position);rebuildNav(navCenter);pathTimer=0;circlePath=[];pathIndex=0;pathGoal=null;}let cp=circle.position,dist=cp.distanceTo(player.pos);
 if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
 else if(mode==='oreo'&&throwTarget){let d=cp.distanceTo(throwTarget);if(d>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='investigate';failedAt=throwTarget.clone();throwTarget=null;document.querySelector('#status').textContent='Miss Circle investigates the Oreo!'}}
 else if(mode==='chase'){moveCircleToward(player.pos,6.5,dt);playAnim('run');if(dist<1.35){playAnim('attack');dead=true;hud()}}

@@ -79,7 +79,7 @@ function throwOreo(){if(!oreo)return;oreo--;let p=player.pos.clone().add(new THR
 document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){showBridgeGizmos=!showBridgeGizmos;if(showBridgeGizmos){if(navNodes.size===0&&circle)rebuildNav(circle.position);drawBridgeGizmos();}else drawBridgeGizmos();}if(e.code==='KeyE'&&started&&!dead&&!testOpen){let it=closestItem();if(it){scene.remove(it.mesh);items.splice(items.indexOf(it),1);if(it.kind==='paper'){papers++;hud();startTest()}else{oreo++;document.querySelector('#status').textContent='Oreo collected. Q to throw!';hud()}}}if(e.code==='KeyQ'&&!testOpen)throwOreo()});document.addEventListener('keyup',e=>keys[e.code]=false);
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
-document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';renderer.domElement.requestPointerLock()};
+document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
 const clock=new THREE.Clock();let elapsed=0;
 function update(dt){if(!started||dead||testOpen)return;elapsed+=dt;
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
@@ -95,5 +95,7 @@ else if(mode==='chase'){moveCircleToward(player.pos,10.5,dt);playAnim('run');if(
 else if(mode==='calm'){if(dist<14){mode='chase';pathTimer=0;circlePath=[];playAnim('run')}}}
 }
 function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);update(dt);renderer.render(scene,camera)}loop();
+// Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
+document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script></body></html>

@@ -50,12 +50,13 @@ function rebuildNav(center){
 function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 function findPath(from,to){
  const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
- // A* over ONLY explicit ray-connected grid links. No direct-to-target fallback.
- const key=n=>cellKey(n.ix,n.iz),open=[start],came=new Map(),g=new Map([[key(start),0]]),f=new Map([[key(start),start.p.distanceTo(goal.p)]]),closed=new Set();
- while(open.length){open.sort((a,b)=>(f.get(key(a))??Infinity)-(f.get(key(b))??Infinity));const cur=open.shift(),ck=key(cur);
-  if(cur===goal){const out=[cur.p.clone()];let k=ck;while(came.has(k)){const prev=came.get(k);out.push(prev.p.clone());k=key(prev)}out.reverse();return out}
-  if(closed.has(ck))continue;closed.add(ck);
-  for(const next of cur.links){const nk=key(next);if(closed.has(nk))continue;const score=(g.get(ck)??Infinity)+cur.p.distanceTo(next.p);if(score<(g.get(nk)??Infinity)){came.set(nk,cur);g.set(nk,score);f.set(nk,score+next.p.distanceTo(goal.p));if(!open.includes(next))open.push(next)}}
+ // Homemade bridge-walk: explore connected ray links with a stack, backtracking at dead ends.
+ const key=n=>cellKey(n.ix,n.iz),stack=[start],parent=new Map(),visited=new Set([key(start)]);
+ while(stack.length){const cur=stack[stack.length-1];if(cur===goal){const route=[];let k=key(goal),n=goal;route.push(n.p.clone());while(parent.has(k)){n=parent.get(k);k=key(n);route.push(n.p.clone())}route.reverse();return route}
+  // Prefer the linked neighbor that is geometrically closer to the destination, but never jump across a missing bridge.
+  const nexts=cur.links.filter(n=>!visited.has(key(n))).sort((x,y)=>x.p.distanceToSquared(goal.p)-y.p.distanceToSquared(goal.p));
+  if(nexts.length){const next=nexts[0];visited.add(key(next));parent.set(key(next),cur);stack.push(next)}
+  else stack.pop();
  }
  return [];
 }

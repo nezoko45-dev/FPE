@@ -47,11 +47,22 @@ function rebuildNav(center){
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)){n.links.push(q);q.links.push(n)}}
  drawBridgeGizmos();navDirty=false;
 }
-function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
-function findPath(from,to){let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];let route=[],seen=new Set(),limit=700;while(cur!==goal&&limit--){let k=cellKey(cur.ix,cur.iz);if(seen.has(k))break;seen.add(k);let choices=cur.links.filter(n=>!seen.has(cellKey(n.ix,n.iz)));choices.sort((a,b)=>a.p.distanceTo(goal.p)-b.p.distanceTo(goal.p));if(!choices.length)break;cur=choices[0];route.push(cur.p.clone())}if(cur===goal)route.push(goal.p.clone());return route}
+function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
+function findPath(from,to){
+ const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
+ // A* over ONLY explicit ray-connected grid links. No direct-to-target fallback.
+ const key=n=>cellKey(n.ix,n.iz),open=[start],came=new Map(),g=new Map([[key(start),0]]),f=new Map([[key(start),start.p.distanceTo(goal.p)]]),closed=new Set();
+ while(open.length){open.sort((a,b)=>(f.get(key(a))??Infinity)-(f.get(key(b))??Infinity));const cur=open.shift(),ck=key(cur);
+  if(cur===goal){const out=[cur.p.clone()];let k=ck;while(came.has(k)){const prev=came.get(k);out.push(prev.p.clone());k=key(prev)}out.reverse();return out}
+  if(closed.has(ck))continue;closed.add(ck);
+  for(const next of cur.links){const nk=key(next);if(closed.has(nk))continue;const score=(g.get(ck)??Infinity)+cur.p.distanceTo(next.p);if(score<(g.get(nk)??Infinity)){came.set(nk,cur);g.set(nk,score);f.set(nk,score+next.p.distanceTo(goal.p));if(!open.includes(next))open.push(next)}}
+ }
+ return [];
+}
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
-function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.25}
- while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;const waypoint=circlePath[pathIndex]||target,delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
+function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.35}
+ if(!circlePath.length)return;while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.35)pathIndex++;
+ if(pathIndex>=circlePath.length)return;const waypoint=circlePath[pathIndex],delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null;

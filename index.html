@@ -38,9 +38,13 @@ function drawBridgeGizmos(){
  const cellGeo=new THREE.BoxGeometry(.22,.22,.22),cellMat=new THREE.MeshBasicMaterial({color:0xffe45c});const cells=new THREE.InstancedMesh(cellGeo,cellMat,navNodes.size);const dummy=new THREE.Object3D();let i=0;for(const n of navNodes.values()){dummy.position.set(n.p.x,.16,n.p.z);dummy.updateMatrix();cells.setMatrixAt(i++,dummy.matrix)}cells.instanceMatrix.needsUpdate=true;bridgeViz.add(cells);
 }
 function rebuildNav(center){
- navNodes.clear();const minX=Math.floor((center.x-35)/navCell),maxX=Math.ceil((center.x+35)/navCell),minZ=Math.floor((center.z-35)/navCell),maxZ=Math.ceil((center.z+35)/navCell);
- for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
- for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p))n.links.push(q)}
+ // Build cells across EVERY generated chunk, not a small bubble around Miss Circle.
+ navNodes.clear();let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+ for(const id of chunks.keys()){const [cx,cz]=id.split(',').map(Number);minX=Math.min(minX,cx*CHUNK);maxX=Math.max(maxX,(cx+1)*CHUNK);minZ=Math.min(minZ,cz*CHUNK);maxZ=Math.max(maxZ,(cz+1)*CHUNK)}
+ if(!Number.isFinite(minX)){navDirty=false;return}
+ const ix0=Math.floor(minX/navCell),ix1=Math.ceil(maxX/navCell),iz0=Math.floor(minZ/navCell),iz1=Math.ceil(maxZ/navCell);
+ for(let ix=ix0;ix<=ix1;ix++)for(let iz=iz0;iz<=iz1;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});
+ for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)){n.links.push(q);q.links.push(n)}}
  drawBridgeGizmos();navDirty=false;
 }
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}

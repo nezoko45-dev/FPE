@@ -50,14 +50,15 @@ function rebuildNav(center){
 function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 function findPath(from,to){
  const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
- // Greedy bridge walk with a persistent visited set: never reverse into the previous cell;
- // choose the connected neighbor closest to target, and stop if no forward bridge exists.
- const key=n=>cellKey(n.ix,n.iz),route=[start],visited=new Set([key(start)]);let cur=start;
- for(let hops=0;hops<Math.min(navNodes.size,5000)&&cur!==goal;hops++){
-  const next=cur.links.filter(n=>!visited.has(key(n))).sort((x,y)=>x.p.distanceToSquared(goal.p)-y.p.distanceToSquared(goal.p))[0];
-  if(!next)return [];visited.add(key(next));route.push(next);cur=next;
+ // Breadth-first traversal of the homemade ray-bridge grid: guarantees a connected,
+ // non-greedy route and avoids the dead-end/sideways oscillation of nearest-neighbor walks.
+ const key=n=>cellKey(n.ix,n.iz),queue=[start],cameFrom=new Map([[key(start),null]]);let head=0;
+ while(head<queue.length){const cur=queue[head++];if(cur===goal)break;
+  for(const next of cur.links){const k=key(next);if(cameFrom.has(k))continue;cameFrom.set(k,key(cur));queue.push(next)}
  }
- return cur===goal?route.map(n=>n.p.clone()):[];
+ if(!cameFrom.has(key(goal)))return [];
+ const route=[];let k=key(goal);while(k!==null){const n=navNodes.get(k);if(!n)return [];route.push(n.p.clone());k=cameFrom.get(k)}
+ route.reverse();return route;
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
 function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}else{circlePath=[];pathIndex=0}pathGoal=target.clone();pathTimer=.35}

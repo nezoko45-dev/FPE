@@ -51,9 +51,22 @@ function findPath(from,to){
  return route;
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0;
-function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.6}
-while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.65)pathIndex++;
-let waypoint=circlePath[pathIndex]||target,delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>0){circle.position.add(delta.normalize().multiplyScalar(speed*dt));circle.lookAt(waypoint.x,0,waypoint.z)}
+function moveCircleToward(target,speed,dt){
+ pathTimer-=dt;
+ if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){
+   circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.25;
+ }
+ while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.45)pathIndex++;
+ const waypoint=circlePath[pathIndex]||target;
+ const delta=waypoint.clone().sub(circle.position).setY(0);
+ if(delta.lengthSq()>1e-6){
+   const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));
+   circle.position.add(step);
+   // Smoothly rotate toward travel direction; never snap the model's facing.
+   const desired=Math.atan2(step.x,step.z);
+   let angleDiff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+   circle.rotation.y+=angleDiff*Math.min(1,dt*8);
+ }
 }
 buildNav();
 

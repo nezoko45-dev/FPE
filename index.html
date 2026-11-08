@@ -41,8 +41,9 @@ function drawBridgeGizmos(){
 }
 function addGridChunk(cx,cz){const id=cx+','+cz;if(gridChunks.has(id))return;gridChunks.add(id);const minX=Math.floor(cx*CHUNK/navCell),maxX=Math.ceil((cx+1)*CHUNK/navCell),minZ=Math.floor(cz*CHUNK/navCell),maxZ=Math.ceil((cz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});}
 function rebuildNav(center){
- // Build grid chunk-by-chunk alongside floor chunks; retain existing generated cells.
- const cx=Math.floor(center.x/CHUNK),cz=Math.floor(center.z/CHUNK);for(let x=cx-2;x<=cx+2;x++)for(let z=cz-2;z<=cz+2;z++)addGridChunk(x,z);
+ // Keep a bounded rolling grid window to prevent endless-world memory/CPU exhaustion.
+ const cx=Math.floor(center.x/CHUNK),cz=Math.floor(center.z/CHUNK),keep=new Set();for(let x=cx-2;x<=cx+2;x++)for(let z=cz-2;z<=cz+2;z++){const id=x+','+z;keep.add(id);addGridChunk(x,z)}
+ for(const id of [...gridChunks])if(!keep.has(id)){gridChunks.delete(id);const [gx,gz]=id.split(',').map(Number),minX=Math.floor(gx*CHUNK/navCell),maxX=Math.ceil((gx+1)*CHUNK/navCell),minZ=Math.floor(gz*CHUNK/navCell),maxZ=Math.ceil((gz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.delete(cellKey(ix,iz))}
  for(const n of navNodes.values())n.links=[];
  for(const n of navNodes.values())for(const [dx,dz] of [[1,0],[0,1],[1,1],[-1,1]]){const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));if(q&&clearBridge(n.p,q.p)&&!n.links.includes(q)){n.links.push(q);q.links.push(n)}}
  drawBridgeGizmos();navDirty=false;

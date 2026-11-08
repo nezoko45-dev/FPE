@@ -37,19 +37,17 @@ for(let n of navNodes.values())for(let [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){l
 }
 function nearestNode(p){let ix=Math.round((p.x-navMin)/navCell),iz=Math.round((p.z-navMin)/navCell);return navNodes.get(cellKey(ix,iz))||[...navNodes.values()].sort((a,b)=>a.p.distanceTo(p)-b.p.distanceTo(p))[0]}
 function findPath(from,to){
- // Homemade greedy steering: try a straight ray, otherwise step toward the goal
- // through whichever nearby cell is open and makes the most progress.
+ // Follow prebuilt cell-to-cell ray bridges only; no live ray toward the target.
  let cur=nearestNode(from),goal=nearestNode(to);if(!cur||!goal)return [];
  let route=[],visited=new Set(),limit=500;
  while(cur!==goal&&limit--){
-   let key=cellKey(cur.ix,cur.iz);if(visited.has(key))break;visited.add(key);
-   if(clearBridge(cur.p,to)){route.push(to.clone());break}
-   let candidates=cur.links.filter(n=>!visited.has(cellKey(n.ix,n.iz)));
-   candidates.sort((a,b)=>a.p.distanceTo(to)-b.p.distanceTo(to));
-   if(!candidates.length)break;
-   cur=candidates[0];route.push(cur.p.clone());
+   let k=cellKey(cur.ix,cur.iz);if(visited.has(k))break;visited.add(k);
+   let choices=cur.links.filter(n=>!visited.has(cellKey(n.ix,n.iz)));
+   choices.sort((x,y)=>x.p.distanceTo(goal.p)-y.p.distanceTo(goal.p));
+   if(!choices.length)break;
+   cur=choices[0];route.push(cur.p.clone());
  }
- if(cur===goal)route.push(to.clone());
+ if(cur===goal)route.push(goal.p.clone());
  return route;
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0;

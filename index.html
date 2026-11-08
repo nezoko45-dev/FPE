@@ -50,18 +50,17 @@ function rebuildNav(center){
 function nearestNode(p){let best=null,bestD=Infinity;for(const n of navNodes.values()){if(!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 function findPath(from,to){
  const start=nearestNode(from),goal=nearestNode(to);if(!start||!goal)return [];
- // Homemade bridge-walk: explore connected ray links with a stack, backtracking at dead ends.
- const key=n=>cellKey(n.ix,n.iz),stack=[start],parent=new Map(),visited=new Set([key(start)]);
- while(stack.length){const cur=stack[stack.length-1];if(cur===goal){const route=[];let k=key(goal),n=goal;route.push(n.p.clone());while(parent.has(k)){n=parent.get(k);k=key(n);route.push(n.p.clone())}route.reverse();return route}
-  // Prefer the linked neighbor that is geometrically closer to the destination, but never jump across a missing bridge.
-  const nexts=cur.links.filter(n=>!visited.has(key(n))).sort((x,y)=>x.p.distanceToSquared(goal.p)-y.p.distanceToSquared(goal.p));
-  if(nexts.length){const next=nexts[0];visited.add(key(next));parent.set(key(next),cur);stack.push(next)}
-  else stack.pop();
+ // Greedy bridge walk with a persistent visited set: never reverse into the previous cell;
+ // choose the connected neighbor closest to target, and stop if no forward bridge exists.
+ const key=n=>cellKey(n.ix,n.iz),route=[start],visited=new Set([key(start)]);let cur=start;
+ for(let hops=0;hops<Math.min(navNodes.size,5000)&&cur!==goal;hops++){
+  const next=cur.links.filter(n=>!visited.has(key(n))).sort((x,y)=>x.p.distanceToSquared(goal.p)-y.p.distanceToSquared(goal.p))[0];
+  if(!next)return [];visited.add(key(next));route.push(next);cur=next;
  }
- return [];
+ return cur===goal?route.map(n=>n.p.clone()):[];
 }
 let circlePath=[],pathIndex=0,pathGoal=null,pathTimer=0,navCenter=new THREE.Vector3(0,0,0);
-function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){circlePath=findPath(circle.position,target);pathIndex=0;pathGoal=target.clone();pathTimer=.35}
+function moveCircleToward(target,speed,dt){pathTimer-=dt;if(pathTimer<=0||!pathGoal||pathGoal.distanceTo(target)>3){const fresh=findPath(circle.position,target);if(fresh.length){circlePath=fresh;pathIndex=1;}pathGoal=target.clone();pathTimer=.8}
  if(!circlePath.length)return;while(pathIndex<circlePath.length&&circle.position.distanceTo(circlePath[pathIndex])<.35)pathIndex++;
  if(pathIndex>=circlePath.length)return;const waypoint=circlePath[pathIndex],delta=waypoint.clone().sub(circle.position).setY(0);if(delta.lengthSq()>1e-6){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,delta.length()));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*8)}}
 // player

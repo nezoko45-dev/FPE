@@ -292,15 +292,27 @@ if(circle){
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
  else if(target){
-  mode=target.isPlayer?'chase':(target.pos.distanceTo(player.pos)>18?'patrol':'chase');circle.userData.huntTarget=target.agent;
-  // All targets (player AND survivors) use ray-connected cell bridges.
-  // Never bypass walls with direct steering.
-  const survivorStalled=!target.isPlayer&&target.agent&&elapsed-(target.agent.movedCellAt||0)>=3;
-  if(survivorStalled)moveCircleStraightToward(target.pos,5.2,dt);
-  else moveCircleToward(target.pos,5.2,dt);
-  // Sprint animation/speed for every hunt target, not only the player.
-  playAnim('run');
-  if(cp.distanceTo(target.pos)<1.6){playAnim('attack');if(elapsed-(circle.userData.lastDamageAt??-999)>=3){circle.userData.lastDamageAt=elapsed;if(target.isPlayer)damagePlayer(45);else damageSurvivor(target.agent,45)}mode='calm';circleWaypoint=null;}
+  circle.userData.huntTarget=target.agent;
+  const attackDistance=1.65,distToTarget=cp.distanceTo(target.pos);
+  if(distToTarget<=attackDistance){
+   // Lock in place during the attack; animation won't restart every frame.
+   circleWaypoint=null;circlePatrolPoint=null;mode='chase';
+   circle.userData.attackUntil=elapsed+0.85;
+   playAnim('attack');
+   // One hit per 3 seconds, with a clear cooldown independent of animation.
+   if(elapsed-(circle.userData.lastDamageAt??-999)>=3){
+    circle.userData.lastDamageAt=elapsed;
+    if(target.isPlayer)damagePlayer(45);else damageSurvivor(target.agent,45);
+   }
+  }else if(elapsed<(circle.userData.attackUntil||0)){
+   mode='chase';playAnim('attack');
+  }else{
+   mode='chase';
+   const survivorStalled=!target.isPlayer&&target.agent&&elapsed-(target.agent.movedCellAt||0)>=3;
+   if(survivorStalled)moveCircleStraightToward(target.pos,5.2,dt);
+   else moveCircleToward(target.pos,5.2,dt);
+   playAnim('run');
+  }
  }else{
   // If nobody is currently selected, patrol toward nearby movers whose path
   // crosses the cell Miss Circle is standing on (or an adjacent cell).

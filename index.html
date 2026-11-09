@@ -185,7 +185,7 @@ document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){sh
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
-const clock=new THREE.Clock();let elapsed=0;
+const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null;
 function update(dt){if(!started||testOpen)return;elapsed+=dt;if(dead&&elapsed>=playerRespawnAt){dead=false;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
@@ -197,13 +197,16 @@ const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/nav
 updateSurvivors(dt);
 if(circle){
  ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);const cp=circle.position;
- // Prioritize survivors who are away from the player; keep her roaming the school instead of camping nearby.
- const remoteSurvivors=survivors.filter(a=>!a.dead&&a.root.position.distanceTo(player.pos)>18).sort((a,b)=>cp.distanceTo(a.root.position)-cp.distanceTo(b.root.position));
- const remoteTarget=remoteSurvivors[0]||null;
- const movers=survivors.filter(a=>!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<3).map(a=>({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt}));
- if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<3)movers.push({pos:player.pos,isPlayer:true,stamp:playerMovedCellAt});
- movers.sort((a,b)=>b.stamp-a.stamp);const movementTarget=movers.find(t=>!t.isPlayer&&t.pos.distanceTo(player.pos)>18)||null;
- const target=remoteTarget?{pos:remoteTarget.root.position,agent:remoteTarget,isPlayer:false,stamp:remoteTarget.movedCellAt||0}:movementTarget;
+ // Every 11 seconds, select whoever moved most recently (player OR any survivor).
+ if(elapsed>=huntSwitchAt){
+  huntSwitchAt=elapsed+11;
+  const movers=[];
+  if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<=11)movers.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt});
+  for(const a of survivors)if(!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<=11)movers.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt});
+  movers.sort((a,b)=>b.stamp-a.stamp);
+  scheduledHuntTarget=movers[0]||null;
+ }
+ const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}

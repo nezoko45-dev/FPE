@@ -181,7 +181,7 @@ const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
 const teachers=[];
 function loadTeacher(name,file,x,z){
- const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0};
+ const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0,attackUntil:0};
  loader.load('./'+file,g=>{
   t.root=g.scene;t.root.scale.setScalar(.85);t.root.position.copy(t.pos);scene.add(t.root);
   t.mixer=new THREE.AnimationMixer(t.root);g.animations.forEach(c=>t.acts[c.name.toLowerCase()]=t.mixer.clipAction(c));
@@ -192,7 +192,7 @@ function loadTeacher(name,file,x,z){
 }
 function teacherAnim(t,kind){
  if(!t.mixer)return;
- const keys=Object.keys(t.acts),patterns=kind==='run'?['run','sprint','running']:kind==='walk'?['walk','walking','move']:['idle','stand','breath'];
+ const keys=Object.keys(t.acts),patterns=kind==='attack'?['attack','attacking','hit','slash']:kind==='run'?['run','sprint','running']:kind==='walk'?['walk','walking','move']:['idle','stand','breath'];
  let clip=keys.find(k=>patterns.some(p=>k.includes(p)))||keys[0];if(!clip)return;
  const a=t.acts[clip];if(t.active===clip&&a.isRunning())return;Object.values(t.acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();t.active=clip;
 }
@@ -204,7 +204,7 @@ function updateTeachers(dt){
   // Same 45-unit acquisition radius as Circle; outside it, patrol toward movement anywhere.
   for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2&&p.distanceTo(a.root.position)<=45&&(a.movedCellAt||0)>stamp){target=a.root.position;stamp=a.movedCellAt||0}
   if(!dead&&elapsed-(playerMovedCellAt||0)<=2&&p.distanceTo(player.pos)<=45&&(playerMovedCellAt||0)>stamp){target=player.pos;stamp=playerMovedCellAt||0}
-  if(target){steerAgent(t.root,target,5.2,dt);teacherAnim(t,'run')}
+  if(target){const d=p.distanceTo(target);if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack')}else if(elapsed<t.attackUntil){teacherAnim(t,'attack')}else{steerAgent(t.root,target,5.2,dt);teacherAnim(t,'run')}}
   else{
    if(elapsed>=t.patrolAt||!t.waypoint||p.distanceTo(t.waypoint)<1){t.patrolAt=elapsed+11;
     const here=nearestNode(p),opts=here?here.links.filter(n=>clearBridge(p,n.p)):[];

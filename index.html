@@ -200,12 +200,17 @@ loadTeacher('Miss Thavel','fundamental_paper_education_-_miss_thavel.glb',-14,12
 loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-12);
 function updateTeachers(dt){
  for(const t of teachers){if(!t.root)continue;
-  const p=t.root.position;let target=null,stamp=-1;
-  // Same 45-unit acquisition radius as Circle; outside it, patrol toward movement anywhere.
-  for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2&&p.distanceTo(a.root.position)<=45&&(a.movedCellAt||0)>stamp){target=a.root.position;stamp=a.movedCellAt||0}
-  if(!dead&&elapsed-(playerMovedCellAt||0)<=2&&p.distanceTo(player.pos)<=45&&(playerMovedCellAt||0)>stamp){target=player.pos;stamp=playerMovedCellAt||0}
-  if(target){const d=p.distanceTo(target);if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack');if(target===player.pos)teacherHit(t,null,true);else{const victim=survivors.find(a=>a.root.position===target);if(victim)teacherHit(t,victim,false)}}else if(elapsed<t.attackUntil){teacherAnim(t,'attack')}else{steerAgent(t.root,target,5.2,dt);teacherAnim(t,'run')}}
-  else{
+  const p=t.root.position;
+  // Always pursue the nearest living target, regardless of acquisition range.
+  let target=null,best=Infinity;
+  for(const a of survivors){if(a.dead||!a.root)continue;const d=p.distanceTo(a.root.position);if(d<best){best=d;target=a.root.position}}
+  if(!dead){const d=p.distanceTo(player.pos);if(d<best){best=d;target=player.pos}}
+  if(target){
+   const d=p.distanceTo(target);
+   if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack');if(target===player.pos)teacherHit(t,null,true);else{const victim=survivors.find(a=>a.root&&a.root.position===target);if(victim)teacherHit(t,victim,false)}}
+   else if(elapsed<t.attackUntil){teacherAnim(t,'attack')}
+   else{const fast=d<=45;steerAgent(t.root,target,fast?5.2:2.8,dt);teacherAnim(t,fast?'run':'walk')}
+  }else{
    if(elapsed>=t.patrolAt||!t.waypoint||p.distanceTo(t.waypoint)<1){t.patrolAt=elapsed+11;
     const here=nearestNode(p),opts=here?here.links.filter(n=>clearBridge(p,n.p)):[];
     t.waypoint=opts.length?opts[Math.floor(Math.random()*opts.length)].p.clone():null;

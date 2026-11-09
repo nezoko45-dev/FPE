@@ -217,27 +217,26 @@ updateSurvivors(dt);
 if(circle){
  ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);const cp=circle.position;
  // Every 11 seconds, select whoever moved most recently (player OR any survivor).
+ // Hard 11-second target rotation: choose the player if they moved during
+ // this interval; otherwise choose the most recently moving living survivor.
  if(elapsed>=huntSwitchAt){
   huntSwitchAt=elapsed+11;
-  const movers=[];
-  if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<=11)movers.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt});
-  for(const a of survivors)if(!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<=11)movers.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt});
-  movers.sort((a,b)=>b.stamp-a.stamp);
-  // Once the player is down, always send her after a living survivor—even if
-  // their last cell-crossing event is older than this 11-second window.
-  scheduledHuntTarget=movers[0]||null;
-  if(dead||!scheduledHuntTarget||scheduledHuntTarget.isPlayer){
-   const living=survivors.filter(a=>!a.dead).sort((a,b)=>(a.movedCellAt||0)-(b.movedCellAt||0));
-   if(living.length){const a=living[0];scheduledHuntTarget={pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0};}
-  }
+  const playerActive=!dead&&playerMovedCellAt>0&&elapsed-playerMovedCellAt<=11;
+  const activeSurvivors=survivors.filter(a=>!a.dead&&a.movedCellAt>0&&elapsed-a.movedCellAt<=11).sort((a,b)=>b.movedCellAt-a.movedCellAt);
+  if(playerActive)scheduledHuntTarget={pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt};
+  else if(activeSurvivors.length){const a=activeSurvivors[0];scheduledHuntTarget={pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt};}
+  else if(dead){const a=survivors.find(a=>!a.dead);scheduledHuntTarget=a?{pos:a.root.position,agent:a,isPlayer:false,stamp:0}:null;}
  }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
  else if(target){
-  mode=target.pos.distanceTo(player.pos)>18?'patrol':'chase';circle.userData.huntTarget=target.agent;
-  moveCircleToward(target.pos,mode==='patrol'?3.8:10.5,dt);playAnim(mode==='patrol'?'walk':'run');
+  mode=target.isPlayer?'chase':(target.pos.distanceTo(player.pos)>18?'patrol':'chase');circle.userData.huntTarget=target.agent;
+  // Chase the live player position directly; ray-grid steering can otherwise
+  // leave her walking toward a stale/blocked waypoint and appearing oblivious.
+  if(target.isPlayer){circleWaypoint=null;const d=target.pos.clone().sub(cp).setY(0);if(d.lengthSq()>0.01){cp.add(d.normalize().multiplyScalar(Math.min(10.5*dt,d.length())));circle.rotation.y=Math.atan2(d.x,d.z);}playAnim('run');}
+  else {moveCircleToward(target.pos,3.8,dt);playAnim('walk');}
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}
  }else{
   mode='calm';circle.userData.huntTarget=null;

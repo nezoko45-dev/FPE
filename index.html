@@ -247,8 +247,9 @@ if(circle){
   mode=target.isPlayer?'chase':(target.pos.distanceTo(player.pos)>18?'patrol':'chase');circle.userData.huntTarget=target.agent;
   // All targets (player AND survivors) use ray-connected cell bridges.
   // Never bypass walls with direct steering.
-  moveCircleToward(target.pos,target.isPlayer?5.2:3.8,dt);
-  playAnim(target.isPlayer?'run':'walk');
+  moveCircleToward(target.pos,5.2,dt);
+  // Sprint animation/speed for every hunt target, not only the player.
+  playAnim('run');
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}
  }else{
   // If nobody is currently selected, patrol toward nearby movers whose path

@@ -223,8 +223,9 @@ if(circle){
   const livingSurvivors=survivors.filter(a=>!a.dead);
   // Rotate among player and survivors, choosing the next available living target.
   const pool=[];
-  if(!dead)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
-  for(const a of livingSurvivors)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
+  // Miss Circle can sense movement only inside a 45-unit radius.
+  if(!dead&&cp.distanceTo(player.pos)<=45&&elapsed-(playerMovedCellAt||0)<=2)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
+  for(const a of livingSurvivors)if(cp.distanceTo(a.root.position)<=45&&elapsed-(a.movedCellAt||0)<=2)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
   if(pool.length){
    const prev=scheduledHuntTarget;
    let choices=pool.filter(t=>!(prev&&t.isPlayer===prev.isPlayer&&t.agent===prev.agent));

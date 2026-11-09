@@ -76,6 +76,47 @@ function rebuildNav(center){
  }
  if(showBridgeGizmos)drawBridgeGizmos();navDirty=false;
 }
+// Generic ray-bridge steering shared by Miss Circle and survivor agents.
+function steerAgent(agent,target,speed,dt){
+ const here=nearestNode(agent.position),goal=nearestNode(target);let wp=agent.userData.waypoint;
+ if(clearBridge(agent.position,target))wp=target.clone();
+ else if(!wp||agent.position.distanceTo(wp)<=1.25||!clearBridge(agent.position,wp)){
+  wp=null;if(here&&goal){const c=here.links.filter(n=>clearBridge(agent.position,n.p));c.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));wp=c[0]?.p.clone()||null}
+ }
+ agent.userData.waypoint=wp;if(!wp)return false;
+ const d=wp.clone().sub(agent.position).setY(0),len=d.length();if(len<1e-4)return false;
+ const step=d.normalize().multiplyScalar(Math.min(speed*dt,len));agent.position.add(step);
+ const yaw=Math.atan2(step.x,step.z);let diff=((yaw-agent.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;agent.rotation.y+=diff*Math.min(1,dt*5);return true;
+}
+function makeSurvivor(index){
+ const root=new THREE.Group(),skin=mat([0xd9a27c,0xc58b65,0xf0c8a5,0x9b684b][index%4]),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][index%4]),pants=mat(0x303747),shoe=mat(0x202020),hair=mat(0x34251e);
+ const part=(geo,m,x,y,z)=>{const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;root.add(o);return o};
+ part(new THREE.SphereGeometry(.22,10,8),skin,0,1.62,0);part(new THREE.SphereGeometry(.23,10,8),hair,0,1.78,-.025);
+ part(new THREE.BoxGeometry(.48,.62,.25),shirt,0,1.12,0);part(new THREE.BoxGeometry(.18,.55,.18),skin,-.32,1.12,0);part(new THREE.BoxGeometry(.18,.55,.18),skin,.32,1.12,0);
+ const legs=[part(new THREE.BoxGeometry(.19,.55,.2),pants,-.13,.48,0),part(new THREE.BoxGeometry(.19,.55,.2),pants,.13,.48,0)];
+ const arms=[root.children[3],root.children[4]];
+ const feet=[part(new THREE.BoxGeometry(.2,.12,.32),shoe,-.13,.12,.05),part(new THREE.BoxGeometry(.2,.12,.32),shoe,.13,.12,.05)];
+ scene.add(root);root.position.set((index-1.5)*2,0,8+Math.random()*5);
+ return {root,legs,arms,feet,phase:Math.random()*6,task:'loot'};
+}
+const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
+function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
+function updateSurvivors(dt){
+ for(const a of survivors){
+  // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
+  let targetItem=null,best=Infinity;
+  for(const it of items){const d=a.root.position.distanceTo(it.mesh.position);if(d<best){best=d;targetItem=it}}
+  if(targetItem&&best<1.15){
+   scene.remove(targetItem.mesh);items.splice(items.indexOf(targetItem),1);
+   if(targetItem.kind==='paper')papers++;else oreo++;
+   hud();
+   if(targetItem.kind==='oreo'&&circle){circle.userData.distractionUntil=elapsed+5;circle.userData.distractionPoint=a.root.position.clone()}
+   targetItem=null;
+  }
+  if(targetItem){steerAgent(a.root,targetItem.mesh.position,4.2,dt);animateSurvivor(a,true,dt)}
+  else{animateSurvivor(a,false,dt)}
+ }
+}
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 // Ray-bridge steering only. Hold each selected bridge waypoint to prevent frame-to-frame jitter.
 let circleWaypoint=null;
@@ -130,11 +171,11 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random
 let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
-if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);let cp=circle.position,dist=cp.distanceTo(player.pos);
+updateSurvivors(dt);\nif(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);let cp=circle.position,dist=cp.distanceTo(player.pos);
 setChaseVisual(mode==='chase');if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
 else if(mode==='oreo'&&throwTarget){let d=cp.distanceTo(throwTarget);if(d>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='investigate';failedAt=throwTarget.clone();throwTarget=null;document.querySelector('#status').textContent='Miss Circle investigates the Oreo!'}}
 else if(mode==='chase'){moveCircleToward(player.pos,10.5,dt);playAnim('run');if(dist<1.35){playAnim('attack');dead=true;hud()}}
-else if(mode==='calm'){if(dist<14){mode='chase';playAnim('run')}}}
+else if(mode==='calm'){if(circle.userData.distractionUntil>elapsed&&circle.userData.distractionPoint){moveCircleToward(circle.userData.distractionPoint,3.5,dt);playAnim('walk')}else if(dist<14){mode='chase';playAnim('run')}}}
 }
 function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);update(dt);renderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.

@@ -235,19 +235,19 @@ if(circle){
   // Only fall back to the player when no survivor is within detection range.
   if(!pool.length&&!dead&&cp.distanceTo(player.pos)<=45)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
   if(pool.length){
-   const prev=scheduledHuntTarget;
-   let choices=pool.filter(t=>!(prev&&t.isPlayer===prev.isPlayer&&t.agent===prev.agent));
-   if(!choices.length)choices=pool;
-   choices.sort((a,b)=>b.stamp-a.stamp);
-   scheduledHuntTarget=choices[0];
+   // Choose the most recently moved eligible entity, but only inside 45 units.
+   pool.sort((a,b)=>b.stamp-a.stamp);
+   scheduledHuntTarget=pool[0];
   }else scheduledHuntTarget=null;
  }
- // Immediately drop a target the moment they die; never wait out the 11s timer.
+ // Enforce detection distance continuously, not only during target rotation.
  if(scheduledHuntTarget&&(scheduledHuntTarget.isPlayer?dead:scheduledHuntTarget.agent?.dead)){
   scheduledHuntTarget=null;huntSwitchAt=elapsed;
  }
- // Respawned survivors are fresh hunt candidates; don't retain stale target references.
- if(!scheduledHuntTarget&&elapsed>=huntSwitchAt)huntSwitchAt=elapsed;
+ if(scheduledHuntTarget){
+  const livePos=scheduledHuntTarget.isPlayer?player.pos:scheduledHuntTarget.agent.root.position;
+  if(cp.distanceTo(livePos)>45){scheduledHuntTarget=null;huntSwitchAt=elapsed;}
+ }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}

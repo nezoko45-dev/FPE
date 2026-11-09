@@ -79,10 +79,8 @@ function rebuildNav(center){
 // Generic ray-bridge steering shared by Miss Circle and survivor agents.
 function steerAgent(agent,target,speed,dt){
  const here=nearestNode(agent.position),goal=nearestNode(target);let wp=agent.userData.waypoint;
- if(clearBridge(agent.position,target))wp=target.clone();
- else if(!wp||agent.position.distanceTo(wp)<=1.25||!clearBridge(agent.position,wp)){
-  wp=null;if(here&&goal){const c=here.links.filter(n=>clearBridge(agent.position,n.p));c.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));wp=c[0]?.p.clone()||null}
- }
+ if(wp&&agent.position.distanceTo(wp)<=0.7)wp=null;
+ if(!wp){if(clearBridge(agent.position,target))wp=target.clone();else if(here&&goal){const c=here.links.filter(n=>clearBridge(agent.position,n.p));c.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));wp=c[0]?.p.clone()||null}}
  agent.userData.waypoint=wp;if(!wp)return false;
  const d=wp.clone().sub(agent.position).setY(0),len=d.length();if(len<1e-4)return false;
  const step=d.normalize().multiplyScalar(Math.min(speed*dt,len));agent.position.add(step);
@@ -124,19 +122,8 @@ let circleWaypoint=null;
 function moveCircleToward(target,speed,dt){
  const here=nearestNode(circle.position),goal=nearestNode(target);
  // If target is directly visible, prefer the straight ray and clear any stale waypoint.
- if(clearBridge(circle.position,target))circleWaypoint=target.clone();
- else{
-  // Keep a chosen node until reached; only replace it if blocked or arrived.
-  if(circleWaypoint&&circle.position.distanceTo(circleWaypoint)>1.25&&clearBridge(circle.position,circleWaypoint)){}
-  else{
-   circleWaypoint=null;
-   if(here&&goal){
-    const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));
-    candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));
-    circleWaypoint=candidates[0]?.p.clone()||null;
-   }
-  }
- }
+ if(circleWaypoint&&circle.position.distanceTo(circleWaypoint)<=0.7)circleWaypoint=null;
+ if(!circleWaypoint){if(clearBridge(circle.position,target))circleWaypoint=target.clone();else if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));circleWaypoint=candidates[0]?.p.clone()||null}}
  if(!circleWaypoint)return;
  const delta=circleWaypoint.clone().sub(circle.position).setY(0),distance=delta.length();
  if(distance>1e-4){

@@ -179,6 +179,42 @@ const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,
 let keys={},locked=false,started=false,dead=false,playerMovedCellAt=0,lastPlayerCell='',papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
 const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.set(12,0,12);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
+const teachers=[];
+function loadTeacher(name,file,x,z){
+ const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0};
+ loader.load('./'+file,g=>{
+  t.root=g.scene;t.root.scale.setScalar(.85);t.root.position.copy(t.pos);scene.add(t.root);
+  t.mixer=new THREE.AnimationMixer(t.root);g.animations.forEach(c=>t.acts[c.name.toLowerCase()]=t.mixer.clipAction(c));
+  console.log(name+' animation clips:',g.animations.map(c=>c.name));
+  teacherAnim(t,'idle');
+ },undefined,e=>console.warn(name+' model failed',e));
+ teachers.push(t);return t;
+}
+function teacherAnim(t,kind){
+ if(!t.mixer)return;
+ const keys=Object.keys(t.acts),patterns=kind==='run'?['run','sprint','running']:kind==='walk'?['walk','walking','move']:['idle','stand','breath'];
+ let clip=keys.find(k=>patterns.some(p=>k.includes(p)))||keys[0];if(!clip)return;
+ const a=t.acts[clip];if(t.active===clip&&a.isRunning())return;Object.values(t.acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();t.active=clip;
+}
+loadTeacher('Miss Thavel','fundamental_paper_education_-_miss_thavel.glb',-14,12);
+loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-12);
+function updateTeachers(dt){
+ for(const t of teachers){if(!t.root)continue;
+  const p=t.root.position;let target=null,stamp=-1;
+  // Same 45-unit acquisition radius as Circle; outside it, patrol toward movement anywhere.
+  for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2&&p.distanceTo(a.root.position)<=45&&(a.movedCellAt||0)>stamp){target=a.root.position;stamp=a.movedCellAt||0}
+  if(!dead&&elapsed-(playerMovedCellAt||0)<=2&&p.distanceTo(player.pos)<=45&&(playerMovedCellAt||0)>stamp){target=player.pos;stamp=playerMovedCellAt||0}
+  if(target){steerAgent(t.root,target,5.2,dt);teacherAnim(t,'run')}
+  else{
+   if(elapsed>=t.patrolAt||!t.waypoint||p.distanceTo(t.waypoint)<1){t.patrolAt=elapsed+11;
+    const here=nearestNode(p),opts=here?here.links.filter(n=>clearBridge(p,n.p)):[];
+    t.waypoint=opts.length?opts[Math.floor(Math.random()*opts.length)].p.clone():null;
+   }
+   if(t.waypoint){steerAgent(t.root,t.waypoint,2.8,dt);teacherAnim(t,'walk')}else teacherAnim(t,'idle');
+  }
+ }
+}
+
 const items=[],lootChunks=new Set();function openHallLootPoint(x,z){
  // Procedural room tiles are 10-unit cells with BOTH tile indices even.
  const tx=Math.floor(x/10),tz=Math.floor(z/10);
@@ -294,7 +330,7 @@ if(circle){
  }
 }
 }
-function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);update(dt);renderer.render(scene,camera)}loop();
+function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);renderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
 document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});

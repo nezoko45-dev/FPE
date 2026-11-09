@@ -153,6 +153,12 @@ function updateSurvivors(dt){
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 // Ray-bridge steering only. Hold each selected bridge waypoint to prevent frame-to-frame jitter.
 let circleWaypoint=null;
+function moveCircleStraightToward(target,speed,dt){
+ // Emergency fallback: if a survivor has been stationary for 3 seconds,
+ // stop insisting on blocked ray bridges and walk directly toward them.
+ const delta=target.clone().sub(circle.position).setY(0),distance=delta.length();
+ if(distance>1e-4){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,distance));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*5);}
+}
 function moveCircleToward(target,speed,dt){
  const here=nearestNode(circle.position),goal=nearestNode(target);
  // If target is directly visible, prefer the straight ray and clear any stale waypoint.
@@ -249,7 +255,9 @@ if(circle){
   mode=target.isPlayer?'chase':(target.pos.distanceTo(player.pos)>18?'patrol':'chase');circle.userData.huntTarget=target.agent;
   // All targets (player AND survivors) use ray-connected cell bridges.
   // Never bypass walls with direct steering.
-  moveCircleToward(target.pos,5.2,dt);
+  const survivorStalled=!target.isPlayer&&target.agent&&elapsed-(target.agent.movedCellAt||0)>=3;
+  if(survivorStalled)moveCircleStraightToward(target.pos,5.2,dt);
+  else moveCircleToward(target.pos,5.2,dt);
   // Sprint animation/speed for every hunt target, not only the player.
   playAnim('run');
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}

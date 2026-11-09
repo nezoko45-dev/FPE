@@ -204,7 +204,13 @@ if(circle){
   if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<=11)movers.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt});
   for(const a of survivors)if(!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<=11)movers.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt});
   movers.sort((a,b)=>b.stamp-a.stamp);
+  // Once the player is down, always send her after a living survivor—even if
+  // their last cell-crossing event is older than this 11-second window.
   scheduledHuntTarget=movers[0]||null;
+  if(dead||!scheduledHuntTarget||scheduledHuntTarget.isPlayer){
+   const living=survivors.filter(a=>!a.dead).sort((a,b)=>(a.movedCellAt||0)-(b.movedCellAt||0));
+   if(living.length){const a=living[0];scheduledHuntTarget={pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0};}
+  }
  }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');

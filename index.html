@@ -204,7 +204,7 @@ document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){sh
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
-const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null;
+const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;
 function update(dt){if(!started||testOpen)return;elapsed+=dt;if(dead&&elapsed>=playerRespawnAt){dead=false;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
@@ -266,8 +266,18 @@ if(circle){
   const crossing=movers.filter(m=>m.pos.distanceTo(currentCell)<=navCell*1.6).sort((a,b)=>b.stamp-a.stamp)[0];
   const patrolTarget=occupants[0]||crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
   circle.userData.huntTarget=null;
-  if(patrolTarget){mode='patrol';moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}
-  else{mode='calm';playAnim('idle')}
+  if(patrolTarget){mode='patrol';circlePatrolPoint=null;moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}
+  else{
+   // Keep patrolling even when nobody is moving nearby: choose a reachable
+   // ray-bridge neighbor and continue roaming instead of standing idle.
+   mode='patrol';circle.userData.huntTarget=null;
+   if(!circlePatrolPoint||cp.distanceTo(circlePatrolPoint)<1.1||!clearBridge(cp,circlePatrolPoint)){
+    const here=nearestNode(cp),options=here?here.links.filter(n=>clearBridge(cp,n.p)): [];
+    circlePatrolPoint=options.length?options[Math.floor(Math.random()*options.length)].p.clone():null;
+   }
+   if(circlePatrolPoint){moveCircleToward(circlePatrolPoint,2.8,dt);playAnim('walk')}
+   else playAnim('idle');
+  }
  }
 }
 }

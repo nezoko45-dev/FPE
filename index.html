@@ -78,13 +78,20 @@ function rebuildNav(center){
 }
 // Generic ray-bridge steering shared by Miss Circle and survivor agents.
 function steerAgent(agent,target,speed,dt){
- // Simple Miss Circle-style ray steering: direct ray when clear, otherwise choose
- // the best immediately reachable neighboring grid cell toward the target.
+ // Steer on the OUTSIDE perimeter of blocked ray cells: use the cell's
+ // exposed bridge endpoints, never an interior point embedded in wall geometry.
  const here=nearestNode(agent.position),goal=nearestNode(target);let wp=agent.userData.waypoint;
  if(wp&&agent.position.distanceTo(wp)<=0.8)wp=null;
  if(!wp){
   if(clearBridge(agent.position,target))wp=target.clone();
-  else if(here&&goal){const options=here.links.filter(n=>clearBridge(agent.position,n.p));options.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));wp=options[0]?.p.clone()||null}
+  else if(here&&goal){
+   const options=here.links.filter(n=>clearBridge(agent.position,n.p)&&clearBridge(n.p,target));
+   options.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));
+   wp=options[0]?.p.clone()||null;
+   // If the target ray is blocked, bias the selected bridge to a cell edge
+   // offset outward from its center, where the bridge ray clears obstacles.
+   if(wp){const outward=wp.clone().sub(here.p).setY(0);if(outward.lengthSq()>0)wp.add(outward.normalize().multiplyScalar(navCell*.45));}
+  }
  }
  agent.userData.waypoint=wp;if(!wp)return false;
  const d=wp.clone().sub(agent.position).setY(0),len=d.length();if(len<1e-4)return false;

@@ -170,7 +170,7 @@ function moveCircleToward(target,speed,dt){
 }
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
-let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
+let keys={},locked=false,started=false,dead=false,playerMovedCellAt=0,lastPlayerCell='',papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
 const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.set(12,0,12);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
 const items=[],lootChunks=new Set();function spawn(kind,x=(Math.random()*80-40),z=(Math.random()*80-40)){let m=kind==='paper'?new THREE.Mesh(new THREE.BoxGeometry(.45,.05,.6),mat(0xffeaa0)):new THREE.Mesh(new THREE.TorusGeometry(.22,.09,8,16),mat(0x6a3519));m.position.set(x,.35,z);m.rotation.x=kind==='oreo'?Math.PI/2:0;scene.add(m);items.push({kind,mesh:m})}
@@ -193,6 +193,7 @@ if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random
 if(!dead){let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
 camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);}
+const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/navCell));if(pCell!==lastPlayerCell){lastPlayerCell=pCell;playerMovedCellAt=elapsed;}
 updateSurvivors(dt);
 if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);let cp=circle.position;const preyList=[...(dead?[]:[{pos:player.pos,isPlayer:true}]),...survivors.filter(a=>!a.dead).map(a=>({pos:a.root.position,agent:a}))];preyList.sort((x,y)=>cp.distanceToSquared(x.pos)-cp.distanceToSquared(y.pos));const prey=preyList[0],huntPos=prey?prey.pos:player.pos,dist=cp.distanceTo(huntPos);
 setChaseVisual(mode==='chase');if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}
@@ -205,7 +206,7 @@ else if(mode==='chase'){
    playAnim('attack');
    if(prey.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…';}
    else{prey.agent.dead=true;prey.agent.respawnAt=elapsed+7;prey.agent.root.visible=false;}
-   mode='patrol';circleWaypoint=null;circle.userData.patrolTarget=cellPos(Math.floor(huntPos.x/navCell)+((Math.random()<.5)?2:-2),Math.floor(huntPos.z/navCell)+((Math.random()<.5)?2:-2));hud();
+   mode='calm';circleWaypoint=null;circle.userData.patrolTarget=null;hud();
   }
  }
 }
@@ -216,7 +217,8 @@ else if(mode==='calm'){
   // Patrol toward the occupied grid cell of a survivor who just moved; don't
   // continuously chase survivors across the map. Player proximity still triggers chase.
   const movingSurvivor=survivors.find(a=>!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<0.45);
-  if(movingSurvivor){mode='patrol';circle.userData.patrolTarget=cellPos(Math.floor(movingSurvivor.root.position.x/navCell),Math.floor(movingSurvivor.root.position.z/navCell));circleWaypoint=null;moveCircleToward(circle.userData.patrolTarget,3.5,dt);playAnim('walk')}
+  const playerMoving=!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<0.45;
+  if(movingSurvivor||playerMoving){mode='patrol';const movingTarget=movingSurvivor?movingSurvivor.root.position:player.pos;circle.userData.patrolTarget=cellPos(Math.floor(movingTarget.x/navCell),Math.floor(movingTarget.z/navCell));circleWaypoint=null;moveCircleToward(circle.userData.patrolTarget,3.5,dt);playAnim('walk')}
   else if(!dead&&cp.distanceTo(player.pos)<22){mode='chase';playAnim('run')}
  }}}
 }

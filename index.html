@@ -99,17 +99,17 @@ function steerAgent(agent,target,speed,dt){
 }
 function survivorSpawnPoint(){
  // Spawn in a separate open hall well away from the player's current room.
- const playerRoomX=Math.floor(player.pos.x/10),playerRoomZ=Math.floor(player.pos.z/10);
+ const playerRoomX=0,playerRoomZ=0;
  for(let tries=0;tries<160;tries++){
   const x=(Math.random()*120-60),z=(Math.random()*120-60);
   const p=new THREE.Vector3(x,0,z),box=new THREE.Box3(new THREE.Vector3(x-.45,0,z-.45),new THREE.Vector3(x+.45,1.8,z+.45));
   const roomX=Math.floor(x/10),roomZ=Math.floor(z/10);
   if(Math.abs(roomX-playerRoomX)<=1&&Math.abs(roomZ-playerRoomZ)<=1)continue;
-  if(p.distanceTo(player.pos)<24)continue;
+  if(p.length()<24)continue;
   if(!walls.some(w=>w.intersectsBox(box)))return p;
  }
  // Guaranteed distant fallback relative to player.
- return new THREE.Vector3(player.pos.x+35,0,player.pos.z+35);
+ return new THREE.Vector3(35,0,35);
 }
 function makeSurvivor(index){
  const root=new THREE.Group(),skin=mat([0xd9a27c,0xc58b65,0xf0c8a5,0x9b684b][index%4]),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][index%4]),pants=mat(0x303747),shoe=mat(0x202020),hair=mat(0x34251e);

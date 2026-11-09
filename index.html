@@ -197,16 +197,19 @@ const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/nav
 updateSurvivors(dt);
 if(circle){
  ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);const cp=circle.position;
- // Movement is the only trigger for hunting: chase whichever survivor/player most recently changed cells.
+ // Prioritize survivors who are away from the player; keep her roaming the school instead of camping nearby.
+ const remoteSurvivors=survivors.filter(a=>!a.dead&&a.root.position.distanceTo(player.pos)>18).sort((a,b)=>cp.distanceTo(a.root.position)-cp.distanceTo(b.root.position));
+ const remoteTarget=remoteSurvivors[0]||null;
  const movers=survivors.filter(a=>!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<3).map(a=>({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt}));
  if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<3)movers.push({pos:player.pos,isPlayer:true,stamp:playerMovedCellAt});
- movers.sort((a,b)=>b.stamp-a.stamp);const target=movers[0]||null;
+ movers.sort((a,b)=>b.stamp-a.stamp);const movementTarget=movers.find(t=>!t.isPlayer&&t.pos.distanceTo(player.pos)>18)||null;
+ const target=remoteTarget?{pos:remoteTarget.root.position,agent:remoteTarget,isPlayer:false,stamp:remoteTarget.movedCellAt||0}:movementTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
  else if(target){
-  mode='chase';circle.userData.huntTarget=target.isPlayer?'player':target.agent;
-  moveCircleToward(target.pos,10.5,dt);playAnim('run');
+  mode=target.pos.distanceTo(player.pos)>18?'patrol':'chase';circle.userData.huntTarget=target.agent;
+  moveCircleToward(target.pos,mode==='patrol'?3.8:10.5,dt);playAnim(mode==='patrol'?'walk':'run');
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}
  }else{
   mode='calm';circle.userData.huntTarget=null;

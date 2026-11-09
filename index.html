@@ -275,11 +275,11 @@ if(circle){
   const pool=[];
   // Acquire ANY living survivor in range, including stationary/pacing ones.
   // Movement timestamps are only for ranking, never a gate that prevents hunting.
-  for(const a of livingSurvivors)if(cp.distanceTo(a.root.position)<=45)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
+  for(const a of livingSurvivors)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
   // Only fall back to the player when no survivor is within detection range.
-  if(!pool.length&&!dead&&cp.distanceTo(player.pos)<=45)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
+  if(!pool.length&&!dead)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
   if(pool.length){
-   // Choose the most recently moved eligible entity, but only inside 45 units.
+   // Choose the most recently moved living entity at any distance.
    pool.sort((a,b)=>b.stamp-a.stamp);
    scheduledHuntTarget=pool[0];
   }else scheduledHuntTarget=null;
@@ -290,7 +290,7 @@ if(circle){
  }
  if(scheduledHuntTarget){
   const livePos=scheduledHuntTarget.isPlayer?player.pos:scheduledHuntTarget.agent.root.position;
-  if(cp.distanceTo(livePos)>45){scheduledHuntTarget=null;huntSwitchAt=elapsed;}
+  
  }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
@@ -315,8 +315,8 @@ if(circle){
    mode='chase';
    const survivorStalled=!target.isPlayer&&target.agent&&elapsed-(target.agent.movedCellAt||0)>=3;
    if(survivorStalled)moveCircleStraightToward(target.pos,5.2,dt);
-   else moveCircleToward(target.pos,5.2,dt);
-   playAnim('run');
+   else moveCircleToward(target.pos,distToTarget<=45?5.2:2.8,dt);
+   playAnim(distToTarget<=45?'run':'walk');
   }
  }else{
   // If nobody is currently selected, patrol toward nearby movers whose path

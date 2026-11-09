@@ -217,15 +217,21 @@ updateSurvivors(dt);
 if(circle){
  ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);const cp=circle.position;
  // Every 11 seconds, select whoever moved most recently (player OR any survivor).
- // Hard 11-second target rotation: choose the player if they moved during
- // this interval; otherwise choose the most recently moving living survivor.
- if(elapsed>=huntSwitchAt){
+ // Hold the selected target for a full 11 seconds, regardless of respawn.
+ if(!scheduledHuntTarget||elapsed>=huntSwitchAt){
   huntSwitchAt=elapsed+11;
-  const playerActive=!dead&&playerMovedCellAt>0&&elapsed-playerMovedCellAt<=11;
-  const activeSurvivors=survivors.filter(a=>!a.dead&&a.movedCellAt>0&&elapsed-a.movedCellAt<=11).sort((a,b)=>b.movedCellAt-a.movedCellAt);
-  if(playerActive)scheduledHuntTarget={pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt};
-  else if(activeSurvivors.length){const a=activeSurvivors[0];scheduledHuntTarget={pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt};}
-  else if(dead){const a=survivors.find(a=>!a.dead);scheduledHuntTarget=a?{pos:a.root.position,agent:a,isPlayer:false,stamp:0}:null;}
+  const livingSurvivors=survivors.filter(a=>!a.dead);
+  // Rotate among player and survivors, choosing the next available living target.
+  const pool=[];
+  if(!dead)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
+  for(const a of livingSurvivors)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
+  if(pool.length){
+   const prev=scheduledHuntTarget;
+   let choices=pool.filter(t=>!(prev&&t.isPlayer===prev.isPlayer&&t.agent===prev.agent));
+   if(!choices.length)choices=pool;
+   choices.sort((a,b)=>b.stamp-a.stamp);
+   scheduledHuntTarget=choices[0];
+  }else scheduledHuntTarget=null;
  }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');

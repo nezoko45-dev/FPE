@@ -85,12 +85,11 @@ function steerAgent(agent,target,speed,dt){
  if(!wp){
   if(clearBridge(agent.position,target))wp=target.clone();
   else if(here&&goal){
-   const options=here.links.filter(n=>clearBridge(agent.position,n.p)&&clearBridge(n.p,target));
+   // Choose a clear immediate neighbor that makes progress toward the target.
+   // Don't require a direct neighbor-to-target ray: that caused deadlocks at doors.
+   const options=here.links.filter(n=>clearBridge(agent.position,n.p));
    options.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));
    wp=options[0]?.p.clone()||null;
-   // If the target ray is blocked, bias the selected bridge to a cell edge
-   // offset outward from its center, where the bridge ray clears obstacles.
-   if(wp){const outward=wp.clone().sub(here.p).setY(0);if(outward.lengthSq()>0)wp.add(outward.normalize().multiplyScalar(navCell*.45));}
   }
  }
  agent.userData.waypoint=wp;if(!wp)return false;
@@ -135,8 +134,14 @@ function updateSurvivors(dt){
    if(targetItem.kind==='oreo'&&circle){circle.userData.distractionUntil=elapsed+5;circle.userData.distractionPoint=a.root.position.clone()}
    targetItem=null;
   }
-  if(targetItem){steerAgent(a.root,targetItem.mesh.position,4.2,dt);animateSurvivor(a,true,dt)}
-  else{animateSurvivor(a,false,dt)}
+  if(targetItem){
+   // Stuck watchdog: if movement makes no progress for 1.2s, discard the
+   // locked waypoint and let simple steering pick another nearby bridge.
+   const targetDistance=a.root.position.distanceTo(targetItem.mesh.position);
+   if(a.lastTargetId!==targetItem||!a.lastTargetDistance||targetDistance<a.lastTargetDistance-.08){a.lastTargetId=targetItem;a.lastTargetDistance=targetDistance;a.stuckSince=elapsed}
+   else if(elapsed-(a.stuckSince||elapsed)>1.2){a.root.userData.waypoint=null;a.stuckSince=elapsed;a.lastTargetDistance=targetDistance}
+   steerAgent(a.root,targetItem.mesh.position,4.2,dt);animateSurvivor(a,true,dt)
+  }else{a.lastTargetId=null;a.lastTargetDistance=0;animateSurvivor(a,false,dt)}
   // Record survivor cell movement for Miss Circle's patrol trigger.
   const cellX=Math.floor(a.root.position.x/navCell),cellZ=Math.floor(a.root.position.z/navCell);
   if(a.lastOccupiedCell!==cellX+','+cellZ){a.lastOccupiedCell=cellX+','+cellZ;a.movedCellAt=elapsed;a.movedCellPos=a.root.position.clone();}

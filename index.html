@@ -102,7 +102,7 @@ function makeSurvivor(index){
 const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
 function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
 function updateSurvivors(dt){
- for(const a of survivors{
+ for(const a of survivors){
   if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.set(Math.random()*16-8,0,Math.random()*18+8);a.root.userData.waypoint=null;}else continue;}
   // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
   let targetItem=null,best=Infinity;

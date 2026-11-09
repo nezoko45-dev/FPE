@@ -98,6 +98,17 @@ function steerAgent(agent,target,speed,dt){
  const step=d.normalize().multiplyScalar(Math.min(speed*dt,len));agent.position.add(step);
  const yaw=Math.atan2(step.x,step.z);let diff=((yaw-agent.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;agent.rotation.y+=diff*Math.min(1,dt*5);return true;
 }
+function survivorSpawnPoint(){
+ // Pick an open hall position: reject points inside wall colliders and keep
+ // survivors away from the randomly partitioned room interiors.
+ for(let tries=0;tries<80;tries++){
+  const x=(Math.random()*8-4),z=(Math.random()*8-4);
+  const p=new THREE.Vector3(x,0,z),box=new THREE.Box3(new THREE.Vector3(x-.4,0,z-.4),new THREE.Vector3(x+.4,1.8,z+.4));
+  if(!walls.some(w=>w.intersectsBox(box)))return p;
+ }
+ // Safe fallback in the central open area.
+ return new THREE.Vector3(0,0,0);
+}
 function makeSurvivor(index){
  const root=new THREE.Group(),skin=mat([0xd9a27c,0xc58b65,0xf0c8a5,0x9b684b][index%4]),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][index%4]),pants=mat(0x303747),shoe=mat(0x202020),hair=mat(0x34251e);
  const part=(geo,m,x,y,z)=>{const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;root.add(o);return o};
@@ -106,14 +117,14 @@ function makeSurvivor(index){
  const legs=[part(new THREE.BoxGeometry(.19,.55,.2),pants,-.13,.48,0),part(new THREE.BoxGeometry(.19,.55,.2),pants,.13,.48,0)];
  const arms=[root.children[3],root.children[4]];
  const feet=[part(new THREE.BoxGeometry(.2,.12,.32),shoe,-.13,.12,.05),part(new THREE.BoxGeometry(.2,.12,.32),shoe,.13,.12,.05)];
- scene.add(root);root.position.set((index-1.5)*2,0,8+Math.random()*5);
+ scene.add(root);root.position.copy(survivorSpawnPoint());
  return {root,legs,arms,feet,phase:Math.random()*6,task:'loot',dead:false,respawnAt:0};
 }
 const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
 function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
 function updateSurvivors(dt){
  for(const a of survivors){
-  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.set(Math.random()*16-8,0,Math.random()*18+8);a.root.userData.waypoint=null;}else continue;}
+  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.copy(survivorSpawnPoint());a.root.userData.waypoint=null;}else continue;}
   // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
   let targetItem=null,best=Infinity;
   for(const it of items){const d=a.root.position.distanceTo(it.mesh.position);if(d<best){best=d;targetItem=it}}

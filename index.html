@@ -257,8 +257,13 @@ if(circle){
   if(!dead&&cp.distanceTo(player.pos)<=45&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
   for(const a of survivors)if(!a.dead&&cp.distanceTo(a.root.position)<=45&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
   const currentCell=cellPos(Math.round(cp.x/navCell),Math.round(cp.z/navCell));
+  // Detect anyone occupying Miss Circle's exact grid cell, even if they
+  // stopped moving; then patrol to that cell. Player and survivors both count.
+  const occupants=[];
+  if(!dead&&Math.round(player.pos.x/navCell)===Math.round(cp.x/navCell)&&Math.round(player.pos.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:player.pos,stamp:playerMovedCellAt||0});
+  for(const a of survivors)if(!a.dead&&Math.round(a.root.position.x/navCell)===Math.round(cp.x/navCell)&&Math.round(a.root.position.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:a.root.position,stamp:a.movedCellAt||0});
   const crossing=movers.filter(m=>m.pos.distanceTo(currentCell)<=navCell*1.6).sort((a,b)=>b.stamp-a.stamp)[0];
-  const patrolTarget=crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
+  const patrolTarget=occupants[0]||crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
   circle.userData.huntTarget=null;
   if(patrolTarget){mode='patrol';moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}
   else{mode='calm';playAnim('idle')}

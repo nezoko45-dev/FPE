@@ -97,12 +97,13 @@ function makeSurvivor(index){
  const arms=[root.children[3],root.children[4]];
  const feet=[part(new THREE.BoxGeometry(.2,.12,.32),shoe,-.13,.12,.05),part(new THREE.BoxGeometry(.2,.12,.32),shoe,.13,.12,.05)];
  scene.add(root);root.position.set((index-1.5)*2,0,8+Math.random()*5);
- return {root,legs,arms,feet,phase:Math.random()*6,task:'loot'};
+ return {root,legs,arms,feet,phase:Math.random()*6,task:'loot',dead:false,respawnAt:0};
 }
 const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
 function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
 function updateSurvivors(dt){
- for(const a of survivors){
+ for(const a of survivors{
+  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.set(Math.random()*16-8,0,Math.random()*18+8);a.root.userData.waypoint=null;}else continue;}
   // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
   let targetItem=null,best=Infinity;
   for(const it of items){const d=a.root.position.distanceTo(it.mesh.position);if(d<best){best=d;targetItem=it}}
@@ -148,12 +149,12 @@ function moveCircleToward(target,speed,dt){
 }
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
-let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0;
+let keys={},locked=false,started=false,dead=false,papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
 const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.set(12,0,12);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
 const items=[],lootChunks=new Set();function spawn(kind,x=(Math.random()*80-40),z=(Math.random()*80-40)){let m=kind==='paper'?new THREE.Mesh(new THREE.BoxGeometry(.45,.05,.6),mat(0xffeaa0)):new THREE.Mesh(new THREE.TorusGeometry(.22,.09,8,16),mat(0x6a3519));m.position.set(x,.35,z);m.rotation.x=kind==='oreo'?Math.PI/2:0;scene.add(m);items.push({kind,mesh:m})}
 function closestItem(){let best=null,d=2.3;items.forEach(i=>{let n=i.mesh.position.distanceTo(player.pos);if(n<d){d=n;best=i}});return best}
-function hud(){document.querySelector('#stats').textContent='Papers: '+papers+' · Oreos: '+oreo;document.querySelector('#msg').textContent=dead?'YOU WERE CAUGHT. Refresh to try again.':''}
+function hud(){document.querySelector('#stats').textContent='Papers: '+papers+' · Oreos: '+oreo;document.querySelector('#msg').textContent=dead?'YOU WERE CAUGHT — respawning…':''}
 function fail(){failedAt=player.pos.clone();mode='investigate';lastFail=performance.now();document.querySelector('#status').textContent='TEST FAILED — Miss Circle is investigating!';playAnim('rage')}
 function startTest(){testOpen=true;document.exitPointerLock();let a=1+Math.floor(Math.random()*12),b=1+Math.floor(Math.random()*12);testAnswer=a+b;document.querySelector('#question').textContent='What is '+a+' + '+b+'?';document.querySelector('#answer').value='';document.querySelector('#testModal').style.display='grid';document.querySelector('#answer').focus()}
 function submitTest(){if(!testOpen)return;testOpen=false;document.querySelector('#testModal').style.display='none';if(Number(document.querySelector('#answer').value)===testAnswer)document.querySelector('#status').textContent='Test passed!';else fail();if(started&&!dead)renderer.domElement.requestPointerLock()}
@@ -164,13 +165,13 @@ document.addEventListener('click',()=>{if(started&&document.pointerLockElement!=
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
 const clock=new THREE.Clock();let elapsed=0;
-function update(dt){if(!started||dead||testOpen)return;elapsed+=dt;
+function update(dt){if(!started||testOpen)return;elapsed+=dt;if(dead&&elapsed>=playerRespawnAt){dead=false;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
 if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastPaper=elapsed}if(elapsed-lastOreo>9+Math.random()*10){spawn('oreo',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastOreo=elapsed}
-let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
+if(!dead){let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length())dir.normalize().multiplyScalar(speed*dt);
 let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
-camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
+camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);}
 updateSurvivors(dt);
 if(circle){ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);let cp=circle.position;const preyList=[...(dead?[]:[{pos:player.pos,isPlayer:true}]),...survivors.filter(a=>!a.dead).map(a=>({pos:a.root.position,agent:a}))];preyList.sort((x,y)=>cp.distanceToSquared(x.pos)-cp.distanceToSquared(y.pos));const prey=preyList[0],huntPos=prey?prey.pos:player.pos,dist=cp.distanceTo(huntPos);
 setChaseVisual(mode==='chase');if(mode==='investigate'&&failedAt){let d=cp.distanceTo(failedAt);if(d>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='chase';document.querySelector('#status').textContent='SHE FOUND YOU. RUN!';playAnim('run')}}

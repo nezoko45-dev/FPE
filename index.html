@@ -10,7 +10,7 @@
 <script type="module">
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-const scene=new THREE.Scene();const normalColor=new THREE.Color(0x9ba8b9),chaseColor=new THREE.Color(0x8b1838);scene.background=normalColor.clone();scene.fog=new THREE.Fog(normalColor,35,105);let chaseVisual=false;function setChaseVisual(on){if(chaseVisual===on)return;chaseVisual=on;scene.background.copy(on?chaseColor:normalColor);scene.fog.color.copy(on?chaseColor:normalColor);setChaseLighting(on);}
+const scene=new THREE.Scene();const normalColor=new THREE.Color(0x9ba8b9),chaseColor=new THREE.Color(0xb00000);scene.background=normalColor.clone();scene.fog=new THREE.Fog(normalColor,35,105);let chaseVisual=false;function setChaseVisual(on){if(chaseVisual===on)return;chaseVisual=on;scene.background.copy(on?chaseColor:normalColor);scene.fog.color.copy(on?chaseColor:normalColor);setChaseLighting(on);}
 const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
 const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);const ambientNormal=2, sunNormal=2.3;function setChaseLighting(on){hemi.intensity=on?.025:ambientNormal;sun.intensity=on?.0:sunNormal;}

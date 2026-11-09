@@ -245,10 +245,10 @@ if(circle){
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
  else if(target){
   mode=target.isPlayer?'chase':(target.pos.distanceTo(player.pos)>18?'patrol':'chase');circle.userData.huntTarget=target.agent;
-  // Chase the live player position directly; ray-grid steering can otherwise
-  // leave her walking toward a stale/blocked waypoint and appearing oblivious.
-  if(target.isPlayer){circleWaypoint=null;const d=target.pos.clone().sub(cp).setY(0);if(d.lengthSq()>0.01){cp.add(d.normalize().multiplyScalar(Math.min(10.5*dt,d.length())));circle.rotation.y=Math.atan2(d.x,d.z);}playAnim('run');}
-  else {moveCircleToward(target.pos,3.8,dt);playAnim('walk');}
+  // All targets (player AND survivors) use ray-connected cell bridges.
+  // Never bypass walls with direct steering.
+  moveCircleToward(target.pos,target.isPlayer?5.2:3.8,dt);
+  playAnim(target.isPlayer?'run':'walk');
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}
  }else{
   // If nobody is currently selected, patrol toward nearby movers whose path

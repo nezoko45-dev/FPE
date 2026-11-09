@@ -266,8 +266,10 @@ if(circle){
   // If nobody is currently selected, patrol toward nearby movers whose path
   // crosses the cell Miss Circle is standing on (or an adjacent cell).
   const movers=[];
-  if(!dead&&cp.distanceTo(player.pos)<=45&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
-  for(const a of survivors)if(!a.dead&&cp.distanceTo(a.root.position)<=45&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
+  // Long-range patrol may follow recent movement anywhere in the streamed school;
+  // this is walking/patrolling, never a chase. Refresh the destination every 11s.
+  if(!dead&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
+  for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
   const currentCell=cellPos(Math.round(cp.x/navCell),Math.round(cp.z/navCell));
   // Detect anyone occupying Miss Circle's exact grid cell, even if they
   // stopped moving; then patrol to that cell. Player and survivors both count.

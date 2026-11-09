@@ -233,6 +233,10 @@ if(circle){
    scheduledHuntTarget=choices[0];
   }else scheduledHuntTarget=null;
  }
+ // Immediately drop a target the moment they die; never wait out the 11s timer.
+ if(scheduledHuntTarget&&(scheduledHuntTarget.isPlayer?dead:scheduledHuntTarget.agent?.dead)){
+  scheduledHuntTarget=null;huntSwitchAt=elapsed;
+ }
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}

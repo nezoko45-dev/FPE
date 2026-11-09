@@ -126,7 +126,7 @@ const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
 function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
 function updateSurvivors(dt){
  for(const a of survivors){
-  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.copy(survivorSpawnPoint());a.root.userData.waypoint=null;}else continue;}
+  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.root.visible=true;a.root.position.copy(survivorSpawnPoint());a.root.userData.waypoint=null;a.movedCellAt=elapsed;a.movedCellPos=a.root.position.clone();a.lastOccupiedCell=null;a.lastTargetId=null;a.lastTargetDistance=0;a.stuckSince=elapsed;}else continue;}
   // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
   let targetItem=null,best=Infinity;
   for(const it of items){const d=a.root.position.distanceTo(it.mesh.position);if(d<best){best=d;targetItem=it}}
@@ -246,6 +246,8 @@ if(circle){
  if(scheduledHuntTarget&&(scheduledHuntTarget.isPlayer?dead:scheduledHuntTarget.agent?.dead)){
   scheduledHuntTarget=null;huntSwitchAt=elapsed;
  }
+ // Respawned survivors are fresh hunt candidates; don't retain stale target references.
+ if(!scheduledHuntTarget&&elapsed>=huntSwitchAt)huntSwitchAt=elapsed;
  const target=scheduledHuntTarget;
  setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}

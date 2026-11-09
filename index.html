@@ -205,7 +205,7 @@ else if(mode==='chase'){
    playAnim('attack');
    if(prey.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…';}
    else{prey.agent.dead=true;prey.agent.respawnAt=elapsed+7;prey.agent.root.visible=false;}
-   mode='calm';circleWaypoint=null;circle.userData.patrolTarget=null;hud();
+   mode='patrol';circleWaypoint=null;circle.userData.patrolTarget=cellPos(Math.floor(huntPos.x/navCell)+((Math.random()<.5)?2:-2),Math.floor(huntPos.z/navCell)+((Math.random()<.5)?2:-2));hud();
   }
  }
 }

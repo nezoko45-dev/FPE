@@ -216,9 +216,11 @@ else if(mode==='calm'){
  else{
   // Patrol toward the occupied grid cell of a survivor who just moved; don't
   // continuously chase survivors across the map. Player proximity still triggers chase.
-  const movingSurvivor=survivors.find(a=>!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<0.45);
-  const playerMoving=!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<0.45;
-  if(movingSurvivor||playerMoving){mode='patrol';const movingTarget=movingSurvivor?movingSurvivor.root.position:player.pos;circle.userData.patrolTarget=cellPos(Math.floor(movingTarget.x/navCell),Math.floor(movingTarget.z/navCell));circleWaypoint=null;moveCircleToward(circle.userData.patrolTarget,3.5,dt);playAnim('walk')}
+  const patrolCandidates=survivors.filter(a=>!a.dead&&a.movedCellAt&&elapsed-a.movedCellAt<1.5).map(a=>({pos:a.root.position,stamp:a.movedCellAt}));
+  if(!dead&&playerMovedCellAt&&elapsed-playerMovedCellAt<1.5)patrolCandidates.push({pos:player.pos,stamp:playerMovedCellAt});
+  patrolCandidates.sort((a,b)=>b.stamp-a.stamp);
+  const movingTarget=patrolCandidates.find(t=>cellKey(Math.floor(t.pos.x/navCell),Math.floor(t.pos.z/navCell))!==circle.userData.lastPatrolCell);
+  if(movingTarget){mode='patrol';const ix=Math.floor(movingTarget.pos.x/navCell),iz=Math.floor(movingTarget.pos.z/navCell);circle.userData.patrolTarget=cellPos(ix,iz);circle.userData.lastPatrolCell=cellKey(ix,iz);circleWaypoint=null;moveCircleToward(circle.userData.patrolTarget,3.5,dt);playAnim('walk')}
   else if(!dead&&cp.distanceTo(player.pos)<22){mode='chase';playAnim('run')}
  }}}
 }

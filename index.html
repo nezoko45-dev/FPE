@@ -183,7 +183,7 @@ const teachers=[];
 function loadTeacher(name,file,x,z){
  const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0,attackUntil:0,lastDamageAt:-999};
  loader.load('./'+file,g=>{
-  t.root=g.scene;t.root.scale.setScalar(.85);t.root.position.copy(t.pos);scene.add(t.root);
+  t.root=g.scene;t.root.scale.setScalar(name==='Miss Thavel'?.55:.85);t.root.position.copy(t.pos);scene.add(t.root);
   t.mixer=new THREE.AnimationMixer(t.root);g.animations.forEach(c=>t.acts[c.name.toLowerCase()]=t.mixer.clipAction(c));
   console.log(name+' animation clips:',g.animations.map(c=>c.name));
   teacherAnim(t,'idle');

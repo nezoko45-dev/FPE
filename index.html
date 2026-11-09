@@ -173,7 +173,26 @@ const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,
 let keys={},locked=false,started=false,dead=false,playerMovedCellAt=0,lastPlayerCell='',papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
 const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.set(12,0,12);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
-const items=[],lootChunks=new Set();function spawn(kind,x=(Math.random()*80-40),z=(Math.random()*80-40)){let m=kind==='paper'?new THREE.Mesh(new THREE.BoxGeometry(.45,.05,.6),mat(0xffeaa0)):new THREE.Mesh(new THREE.TorusGeometry(.22,.09,8,16),mat(0x6a3519));m.position.set(x,.35,z);m.rotation.x=kind==='oreo'?Math.PI/2:0;scene.add(m);items.push({kind,mesh:m})}
+const items=[],lootChunks=new Set();function openHallLootPoint(x,z){
+ // Procedural room tiles are 10-unit cells with BOTH tile indices even.
+ const tx=Math.floor(x/10),tz=Math.floor(z/10);
+ if(tx%2===0&&tz%2===0)return false;
+ const clearance=new THREE.Box3(new THREE.Vector3(x-.38,0,z-.38),new THREE.Vector3(x+.38,.8,z+.38));
+ return !walls.some(w=>w.intersectsBox(clearance));
+}
+function lootSpawnInChunk(cx,cz){
+ // Pick only open corridor tiles; never place collectibles inside room tiles or walls.
+ for(let tries=0;tries<100;tries++){
+  const x=cx*CHUNK+1+Math.random()*(CHUNK-2),z=cz*CHUNK+1+Math.random()*(CHUNK-2);
+  if(openHallLootPoint(x,z))return {x,z};
+ }
+ // Safe corridor fallback, away from room centers.
+ return {x:cx*CHUNK+15,z:cz*CHUNK+5};
+}
+function spawn(kind,x,z){
+ if(!openHallLootPoint(x,z)){const p=lootSpawnInChunk(Math.floor(x/CHUNK),Math.floor(z/CHUNK));x=p.x;z=p.z}
+ let m=kind==='paper'?new THREE.Mesh(new THREE.BoxGeometry(.45,.05,.6),mat(0xffeaa0)):new THREE.Mesh(new THREE.TorusGeometry(.22,.09,8,16),mat(0x6a3519));m.position.set(x,.35,z);m.rotation.x=kind==='oreo'?Math.PI/2:0;scene.add(m);items.push({kind,mesh:m})
+}
 function closestItem(){let best=null,d=2.3;items.forEach(i=>{let n=i.mesh.position.distanceTo(player.pos);if(n<d){d=n;best=i}});return best}
 function hud(){document.querySelector('#stats').textContent='Papers: '+papers+' · Oreos: '+oreo;document.querySelector('#msg').textContent=dead?'YOU WERE CAUGHT — respawning…':''}
 function fail(){failedAt=player.pos.clone();mode='investigate';lastFail=performance.now();document.querySelector('#status').textContent='TEST FAILED — Miss Circle is investigating!';playAnim('rage')}

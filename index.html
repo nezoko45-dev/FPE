@@ -250,9 +250,17 @@ if(circle){
   else {moveCircleToward(target.pos,3.8,dt);playAnim('walk');}
   if(cp.distanceTo(target.pos)<1.35){playAnim('attack');if(target.isPlayer){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 4 seconds…'}else{target.agent.dead=true;target.agent.respawnAt=elapsed+7;target.agent.root.visible=false}mode='calm';circleWaypoint=null;hud()}
  }else{
-  mode='calm';circle.userData.huntTarget=null;
-  // No player-distance aggro or random distractions. Calm idle until movement occurs.
-  playAnim('idle');
+  // If nobody is currently selected, patrol toward nearby movers whose path
+  // crosses the cell Miss Circle is standing on (or an adjacent cell).
+  const movers=[];
+  if(!dead&&cp.distanceTo(player.pos)<=45&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
+  for(const a of survivors)if(!a.dead&&cp.distanceTo(a.root.position)<=45&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
+  const currentCell=cellPos(Math.round(cp.x/navCell),Math.round(cp.z/navCell));
+  const crossing=movers.filter(m=>m.pos.distanceTo(currentCell)<=navCell*1.6).sort((a,b)=>b.stamp-a.stamp)[0];
+  const patrolTarget=crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
+  circle.userData.huntTarget=null;
+  if(patrolTarget){mode='patrol';moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}
+  else{mode='calm';playAnim('idle')}
  }
 }
 }

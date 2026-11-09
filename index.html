@@ -229,12 +229,11 @@ if(circle){
   const livingSurvivors=survivors.filter(a=>!a.dead);
   // Rotate among player and survivors, choosing the next available living target.
   const pool=[];
-  // Prefer nearby moving survivors. Player is a fallback only when no survivor
-  // is moving in range, preventing Miss Circle from permanently camping them.
-  // A movement event inside 45 units starts a hunt; keep tracking that
-  // survivor while she remains in range (don't expire it after 2 seconds).
-  for(const a of livingSurvivors)if(cp.distanceTo(a.root.position)<=45&&(elapsed-(a.movedCellAt||0)<=2||(scheduledHuntTarget?.agent===a)))pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
-  if(!pool.length&&!dead&&cp.distanceTo(player.pos)<=45&&(elapsed-(playerMovedCellAt||0)<=2||scheduledHuntTarget?.isPlayer))pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
+  // Acquire ANY living survivor in range, including stationary/pacing ones.
+  // Movement timestamps are only for ranking, never a gate that prevents hunting.
+  for(const a of livingSurvivors)if(cp.distanceTo(a.root.position)<=45)pool.push({pos:a.root.position,agent:a,isPlayer:false,stamp:a.movedCellAt||0});
+  // Only fall back to the player when no survivor is within detection range.
+  if(!pool.length&&!dead&&cp.distanceTo(player.pos)<=45)pool.push({pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0});
   if(pool.length){
    const prev=scheduledHuntTarget;
    let choices=pool.filter(t=>!(prev&&t.isPlayer===prev.isPlayer&&t.agent===prev.agent));

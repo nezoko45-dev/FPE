@@ -316,8 +316,8 @@ if(circle){
    mode='chase';playAnim('attack');
   }else{
    mode='chase';
-   const survivorStalled=!target.isPlayer&&target.agent&&elapsed-(target.agent.movedCellAt||0)>=3;
-   if(survivorStalled)moveCircleStraightToward(target.pos,5.2,dt);
+   const targetStalled=elapsed-(target.isPlayer?(playerMovedCellAt||0):(target.agent?.movedCellAt||0))>=3;
+   if(targetStalled)moveCircleStraightToward(target.pos,distToTarget<=45?5.2:2.8,dt);
    else moveCircleToward(target.pos,distToTarget<=45?5.2:2.8,dt);
    playAnim(distToTarget<=45?'run':'walk');
   }

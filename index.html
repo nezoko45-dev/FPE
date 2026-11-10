@@ -18,7 +18,7 @@ const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const flo
 function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],wallMeshes=[],schoolRoofs=[],chunks=new Map(),CHUNK=20;let navDirty=true;
 const clutterMat=mat(0x6f4b32),paperMat=mat(0xf2ead2),roofMat=mat(0x777b83);
-let isDay=true;const ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
+const ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
 function makeChunk(cx,cz){
  const id=cx+','+cz;if(chunks.has(id))return;chunks.set(id,true);navDirty=true;
  for(let ax=0;ax<2;ax++)for(let az=0;az<2;az++){
@@ -26,7 +26,7 @@ function makeChunk(cx,cz){
   // Continuous floor, overhead ceiling, and roof slab for every generated tile.
   const floor=block(x,-.16,z,10,.3,10,floorMat,false);floor.userData.schoolMesh=true;
   const roofA=block(x,3.15,z,10,.3,10,roofMat,false);const roofB=block(x,3.45,z,10,.3,10,roofMat,false);roofA.userData.schoolMesh=true;roofB.userData.schoolMesh=true;schoolRoofs.push(roofA,roofB);
-  const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);lamp.visible=true;glow.visible=!isDay;ceilingLights.push({lamp,glow});
+  const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);lamp.visible=true;glow.visible=true;ceilingLights.push({lamp,glow});
   if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){
    for(const w of [block(x,1.5,z-4.5,9,3,.25,wallMat),block(x-4.5,1.5,z,.25,3,9,wallMat),block(x+4.5,1.5,z,.25,3,9,wallMat)])w.userData.schoolMesh=true;
    if(Math.random()>.35)block(x-1.8,1.5,z+4.5,2.8,3,.25,wallMat);
@@ -202,7 +202,7 @@ loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-
 function updateTeachers(dt){
  for(const t of teachers){if(!t.root)continue;
   const p=t.root.position,home=t.pos;
-  if(isDay){const d=p.distanceTo(home);if(d>.35){steerAgent(t.root,home,2.8,dt);teacherAnim(t,'walk')}else teacherAnim(t,'idle');continue;}
+  
   let target=null,stamp=-1,victim=null,isPlayerTarget=false;
   for(const agent of survivors){if(agent.dead||!agent.root)continue;const moved=agent.movedCellAt||0;if(moved>stamp){stamp=moved;target=agent.root.position;victim=agent;isPlayerTarget=false}}
   if(!dead&&(playerMovedCellAt||0)>stamp){stamp=playerMovedCellAt||0;target=player.pos;victim=null;isPlayerTarget=true}
@@ -247,10 +247,10 @@ function throwOreo(){if(!oreo)return;oreo--;let p=player.pos.clone().add(new THR
 document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){showBridgeGizmos=!showBridgeGizmos;if(showBridgeGizmos){if(navNodes.size===0&&circle)rebuildNav(circle.position);drawBridgeGizmos();}else drawBridgeGizmos();}if(e.code==='KeyE'&&started&&!dead&&!testOpen){let it=closestItem();if(it){scene.remove(it.mesh);items.splice(items.indexOf(it),1);if(it.kind==='paper'){papers++;hud();startTest()}else{oreo++;document.querySelector('#status').textContent='Oreo collected. Q to throw!';hud()}}}if(e.code==='KeyQ'&&!testOpen)throwOreo()});document.addEventListener('keyup',e=>keys[e.code]=false);
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
-document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
+document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();initializeWorldLighting();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
 const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;
-const DAY_LENGTH=150,NIGHT_LENGTH=450;function applyDayLighting(){hemi.intensity=ambientNormal;sun.intensity=sunNormal;ceilingLights.forEach(l=>{l.glow.visible=!isDay});setChaseLighting(false);setChaseVisual(false)}function updateDayNight(){const dayNow=(elapsed%(DAY_LENGTH+NIGHT_LENGTH))<DAY_LENGTH;if(dayNow===isDay)return;/* Snapshot visibility before transition; restore every scene object afterward so day/night cannot hide world entities. */const visibility=new Map();scene.traverse(o=>visibility.set(o,o.visible));isDay=dayNow;applyDayLighting();visibility.forEach((wasVisible,o)=>{o.visible=wasVisible});document.querySelector('#status').textContent=isDay?'Daytime: teachers have retreated to their rooms.':'Night: teachers are hunting again!';}
-function update(dt){if(!started||testOpen)return;elapsed+=dt;updateDayNight();if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
+function initializeWorldLighting(){hemi.intensity=ambientNormal;sun.intensity=sunNormal;ceilingLights.forEach(l=>{l.glow.visible=true});setChaseLighting(false);setChaseVisual(false)}
+function update(dt){if(!started||testOpen)return;elapsed+=dt;if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
 if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastPaper=elapsed}if(elapsed-lastOreo>9+Math.random()*10){spawn('oreo',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastOreo=elapsed}
@@ -278,7 +278,7 @@ if(circle){
   
  }
  const target=scheduledHuntTarget;
- setChaseVisual(!isDay&&mode==='chase');
+ setChaseVisual(mode==='chase');
  if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
  else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
  else if(target){

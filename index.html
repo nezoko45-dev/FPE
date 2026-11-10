@@ -335,7 +335,7 @@ if(circle){
  }
 }
 }
-function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);// Visibility guard: keep every world mesh, light, and loaded character rendered.\nscene.traverse(o=>{if(o!==bridgeViz)o.visible=true});\nrenderer.render(scene,camera)}loop();
+function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);renderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
 document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});

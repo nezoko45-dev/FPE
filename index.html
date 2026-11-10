@@ -26,7 +26,8 @@ function makeChunk(cx,cz){
   // Continuous floor, overhead ceiling, and roof slab for every generated tile.
   block(x,-.16,z,10,.3,10,floorMat,false);
   block(x,3.15,z,10,.3,10,roofMat,false);
-  block(x,3.45,z,10,.3,10,roofMat,false);\n  const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);ceilingLights.push({lamp,glow});
+  block(x,3.45,z,10,.3,10,roofMat,false);
+  const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);lamp.visible=isDay;glow.visible=isDay;ceilingLights.push({lamp,glow});
   if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){
    block(x,1.5,z-4.5,9,3,.25,wallMat);block(x-4.5,1.5,z,.25,3,9,wallMat);block(x+4.5,1.5,z,.25,3,9,wallMat);
    if(Math.random()>.35)block(x-1.8,1.5,z+4.5,2.8,3,.25,wallMat);
@@ -261,7 +262,8 @@ document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){sh
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
-const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;\nconst DAY_LENGTH=120,NIGHT_LENGTH=450;let isDay=true;function updateDayNight(){const dayNow=(elapsed%(DAY_LENGTH+NIGHT_LENGTH))<DAY_LENGTH;if(dayNow===isDay)return;isDay=dayNow;ceilingLights.forEach(l=>{l.lamp.visible=isDay;l.glow.visible=isDay});teachers.forEach(t=>{if(t.root)t.root.visible=!isDay});document.querySelector('#status').textContent=isDay?'Daytime: teachers have retreated to their rooms.':'Night: teachers are hunting again!';}
+const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;
+const DAY_LENGTH=120,NIGHT_LENGTH=450;let isDay=true;function updateDayNight(){const dayNow=(elapsed%(DAY_LENGTH+NIGHT_LENGTH))<DAY_LENGTH;if(dayNow===isDay)return;isDay=dayNow;ceilingLights.forEach(l=>{l.lamp.visible=isDay;l.glow.visible=isDay});teachers.forEach(t=>{if(t.root)t.root.visible=!isDay});document.querySelector('#status').textContent=isDay?'Daytime: teachers have retreated to their rooms.':'Night: teachers are hunting again!';}
 function update(dt){if(!started||testOpen)return;elapsed+=dt;updateDayNight();if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}

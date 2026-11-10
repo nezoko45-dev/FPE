@@ -209,9 +209,12 @@ function updateTeachers(dt){
    const d=p.distanceTo(target);
    if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack');if(target===player.pos)teacherHit(t,null,true);else{const victim=survivors.find(a=>a.root&&a.root.position===target);if(victim)teacherHit(t,victim,false)}}
    else if(elapsed<t.attackUntil){teacherAnim(t,'attack')}
-   else{const fast=d<=45;// Teachers can cross room walls directly, matching Circle's straight-through pursuit.
-    const delta=target.clone().sub(p).setY(0),len=delta.length();
-    if(len>1e-4){const step=delta.normalize().multiplyScalar(Math.min((fast?5.2:2.8)*dt,len));p.add(step);const yaw=Math.atan2(step.x,step.z);let diff=((yaw-t.root.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;t.root.rotation.y+=diff*Math.min(1,dt*5);}
+   else{const fast=d<=45,stalled=elapsed-(target===player.pos?(playerMovedCellAt||0):(survivors.find(a=>a.root&&a.root.position===target)?.movedCellAt||0))>=3;
+    if(stalled){
+     // Stationary target for 3s: direct wall-crossing pursuit.
+     const delta=target.clone().sub(p).setY(0),len=delta.length();
+     if(len>1e-4){const step=delta.normalize().multiplyScalar(Math.min((fast?5.2:2.8)*dt,len));p.add(step);const yaw=Math.atan2(step.x,step.z);let diff=((yaw-t.root.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;t.root.rotation.y+=diff*Math.min(1,dt*5);}
+    }else steerAgent(t.root,target,fast?5.2:2.8,dt);
     teacherAnim(t,fast?'run':'walk')}
   }else{
    if(elapsed>=t.patrolAt||!t.waypoint||p.distanceTo(t.waypoint)<1){t.patrolAt=elapsed+11;

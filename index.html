@@ -202,7 +202,7 @@ loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-
 function updateTeachers(dt){
  for(const t of teachers){if(!t.root)continue;
   const p=t.root.position,home=t.pos;
-  
+  if(isDay){t.root.userData.waypoint=null;const retreat=home.clone().sub(p).setY(0),rd=retreat.length();if(rd>.15){p.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));t.root.rotation.y=Math.atan2(retreat.x,retreat.z);teacherAnim(t,'walk')}else teacherAnim(t,'idle');continue;}
   let target=null,stamp=-1,victim=null,isPlayerTarget=false;
   for(const agent of survivors){if(agent.dead||!agent.root)continue;const moved=agent.movedCellAt||0;if(moved>stamp){stamp=moved;target=agent.root.position;victim=agent;isPlayerTarget=false}}
   if(!dead&&(playerMovedCellAt||0)>stamp){stamp=playerMovedCellAt||0;target=player.pos;victim=null;isPlayerTarget=true}

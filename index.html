@@ -178,9 +178,9 @@ function moveCircleToward(target,speed,dt){
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 let keys={},locked=false,started=false,dead=false,playerHp=100,playerMaxHp=100,playerMovedCellAt=0,lastPlayerCell='',papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
-const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.set(12,0,12);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
+const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.copy(circleHome);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
 function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
-const teachers=[];
+const teachers=[];const circleHome=new THREE.Vector3(12,0,12);
 function loadTeacher(name,file,x,z){
  const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0,attackUntil:0,lastDamageAt:-999};
  loader.load('./'+file,g=>{

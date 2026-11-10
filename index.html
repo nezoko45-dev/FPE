@@ -237,7 +237,7 @@ function spawn(kind,x,z){
 function closestItem(){let best=null,d=2.3;items.forEach(i=>{let n=i.mesh.position.distanceTo(player.pos);if(n<d){d=n;best=i}});return best}
 function hud(){document.querySelector('#stats').textContent='Papers: '+papers+' · Oreos: '+oreo;document.querySelector('#health').textContent='Health: '+Math.max(0,Math.ceil(playerHp))+' / '+playerMaxHp;document.querySelector('#msg').textContent=dead?'YOU WERE CAUGHT — respawning…':''}
 function damagePlayer(amount){if(dead)return;playerHp=Math.max(0,playerHp-amount);hud();if(playerHp<=0){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE DEFEATED — respawning…'}}
-function damageSurvivor(a,amount){if(a.dead)return;a.hp=Math.max(0,a.hp-amount);if(a.hp<=0){a.dead=true;a.respawnAt=elapsed+7;a.root.visible=false}}
+function damageSurvivor(a,amount){if(a.dead)return;a.hp=Math.max(0,a.hp-amount);if(a.hp<=0){a.dead=true;a.respawnAt=elapsed+7}}
 function teacherHit(t,target,isPlayer){if(elapsed-(t.lastDamageAt??-999)<3)return;t.lastDamageAt=elapsed;if(isPlayer)damagePlayer(45);else if(target)damageSurvivor(target,45)}
 function fail(){failedAt=player.pos.clone();mode='investigate';lastFail=performance.now();document.querySelector('#status').textContent='TEST FAILED — Miss Circle is investigating!';playAnim('rage')}
 function startTest(){testOpen=true;document.exitPointerLock();let a=1+Math.floor(Math.random()*12),b=1+Math.floor(Math.random()*12);testAnswer=a+b;document.querySelector('#question').textContent='What is '+a+' + '+b+'?';document.querySelector('#answer').value='';document.querySelector('#testModal').style.display='grid';document.querySelector('#answer').focus()}
@@ -335,7 +335,7 @@ if(circle){
  }
 }
 }
-function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);renderer.render(scene,camera)}loop();
+function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);// Visibility guard: keep every world mesh, light, and loaded character rendered.\nscene.traverse(o=>{if(o!==bridgeViz)o.visible=true});\nrenderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
 document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});

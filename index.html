@@ -17,7 +17,8 @@ const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const 
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const floorMat=mat(0xaaa7a0),wallMat=mat(0xd8d4c9),trimMat=mat(0x625c5a);
 function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],wallMeshes=[],chunks=new Map(),CHUNK=20;let navDirty=true;
-const clutterMat=mat(0x6f4b32),paperMat=mat(0xf2ead2),roofMat=mat(0x777b83);\nconst ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
+const clutterMat=mat(0x6f4b32),paperMat=mat(0xf2ead2),roofMat=mat(0x777b83);
+const ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
 function makeChunk(cx,cz){
  const id=cx+','+cz;if(chunks.has(id))return;chunks.set(id,true);navDirty=true;
  for(let ax=0;ax<2;ax++)for(let az=0;az<2;az++){

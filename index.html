@@ -21,11 +21,12 @@ const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness}
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f);
 const obstacles=[],floors=[],items=[],survivors=[],teachers=[],lights=[];
 function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(solid)obstacles.push(new THREE.Box3().setFromObject(o));return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.rayObstacle=true;return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false); // walls stop below ceiling; no opaque roof meshes
 // Open room connections: no overlapping tile-boundary walls that cage the player.
-if(z===-30)box(x,1.5,z-4.9,10,3,.2,wallMat);
-if(x===-30)box(x-4.9,1.5,z,.2,3,10,wallMat);
-if(x===30)box(x+4.9,1.5,z,.2,3,10,wallMat);
+if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
+if(x===-30)wallBox(x-4.9,1.5,z,.2,3,10);
+if(x===30)wallBox(x+4.9,1.5,z,.2,3,10);
 // South perimeter is deliberately open for a reliable exit.
 for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat);box(x+(i?2:-2),1.03,z+(i?1:-1),1.65,.08,1.05,trimMat)}
 const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fixture.position.set(x,2.85,z);scene.add(fixture);const lamp=new THREE.PointLight(0xffe5a0,1.8,8);lamp.position.set(x,2.55,z);scene.add(lamp);lights.push({fixture,lamp});
@@ -33,7 +34,7 @@ const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fi
 for(let x=-30;x<=30;x+=10)for(let z=-30;z<=30;z+=10)schoolTile(x,z);
 box(0,-.45,0,100,.5,100,mat(0x424a43),false);
 // Add more rooms/halls around the playable school perimeter.
-for(let x=-50;x<=50;x+=10){box(x,1.5,-40,10,3,.2,wallMat);box(x,1.5,40,10,3,.2,wallMat)}
+for(let x=-50;x<=50;x+=10){wallBox(x,1.5,-40,10,3,.2);wallBox(x,1.5,40,10,3,.2)}
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 const loader=new GLTFLoader();const assets={circle:'fundamental_paper_education_-_miss_circles.glb',thavel:'fundamental_paper_education_-_miss_thavel.glb',bloomie:'fundamental_paper_education_-_miss_bloomie.glb'};
 function makeSurvivor(i){const g=new THREE.Group();const body=new THREE.Mesh(new THREE.CapsuleGeometry(.27,.65,4,8),mat([0xeee5dc,0xc9d8ee,0xe8c9d4,0xd4e8c9][i]));body.position.y=1;g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(.23,12,10),mat(0xf0d2bd));head.position.y=1.55;g.add(head);g.position.set((i-1.5)*3,0,7+Math.random()*4);scene.add(g);return {root:g,hp:100,dead:false,respawn:0,target:null,phase:Math.random()*6}}
@@ -58,7 +59,7 @@ const speed=t.speed*(nearest<2?0.15:1);const next=p.clone().add(move.multiplySca
 t.root.rotation.y=Math.atan2(move.x,move.z);
 if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-12);if(hp===0){dead=true;document.querySelector('#msg').textContent='YOU WERE CAUGHT — press NEW GAME'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=20;if(s.hp<=0){s.dead=true;s.respawn=elapsed+12;s.root.visible=false}}}}
 }
-function obstaclesMeshes(){return scene.children.filter(o=>o.isMesh&&obstacles.some(b=>b.intersectsBox(new THREE.Box3().setFromObject(o))))}
+function obstaclesMeshes(){return scene.children.filter(o=>o.isMesh&&(o.userData.rayObstacle||obstacles.some(b=>b.intersectsBox(new THREE.Box3().setFromObject(o)))))}
 function update(dt){if(!started)return;elapsed+=dt;phaseTime=(phaseTime+dt)%(DAY+NIGHT);const blend=phaseTime<DAY?0:1;let trans=0;if(phaseTime<TRANS)trans=.5-phaseTime/(TRANS*2);else if(phaseTime>DAY-TRANS&&phaseTime<DAY+TRANS)trans=(phaseTime-(DAY-TRANS))/(TRANS*2);else if(phaseTime>DAY+NIGHT-TRANS)trans=1-(phaseTime-(DAY+NIGHT-TRANS))/(TRANS*2);nightMix=THREE.MathUtils.smoothstep(trans,0,1);sky.copy(daySky).lerp(nightSky,nightMix);scene.background.copy(sky);hemi.intensity=THREE.MathUtils.lerp(1.9,.85,nightMix);sun.intensity=THREE.MathUtils.lerp(2.1,.25,nightMix);sun.position.y=THREE.MathUtils.lerp(32,12,nightMix);lights.forEach(l=>{l.fixture.visible=true;l.lamp.visible=true});
 if(!dead){const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0);const d=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(d.length())d.normalize().multiplyScalar((keys.ShiftLeft?8:5)*dt);const next=player.pos.clone().add(d);if(!collides(next))player.pos.copy(next);camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.set(player.pitch,player.yaw,0)}
 for(const t of teachers){t.mixer?.update(dt);stepTeacher(t,dt)}

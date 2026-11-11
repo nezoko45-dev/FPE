@@ -89,23 +89,21 @@ function updateTeacherGizmos(t){
  if(!t.gizmos)return;
  t.gizmos.forEach(g=>g.visible=showRayGizmos);
  const p=t.root.position,origin=p.clone().add(new THREE.Vector3(0,.9,0)),rayTargets=obstaclesMeshes();
- // Seed a forward fan only when the teacher has traveled 9.8 units since its last seed.
- if(!t.anchorSeedAt||p.distanceTo(t.anchorSeedAt)>=9.8){
-  t.anchorSeedAt=p.clone();
-  const fan=Array.from({length:8},(_,i)=>(i/7-.5)*Math.PI*.88),base=t.root.rotation.y;
-  t.rayAnchors=fan.map((offset,i)=>{
-   const heading=base+offset,radius=4.2+(i%3)*1.45;
-   const probe=new THREE.Vector3(p.x+Math.sin(heading)*radius,8,p.z+Math.cos(heading)*radius);
-   const down=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12);
-   const ground=down.intersectObject(groundPlane,false)[0];
-   return {angle:heading,pos:ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z)};
-  });
- }
+ // Each ray has its own ground anchor and its own 9.8-unit reseed distance.
+ if(!t.rayAnchors)t.rayAnchors=Array.from({length:8},()=>({pos:new THREE.Vector3(),seedAt:p.clone(),angle:0}));
  for(let i=0;i<8;i++){
-  const anchor=t.rayAnchors[i],delta=new THREE.Vector3(anchor.pos.x-p.x,0,anchor.pos.z-p.z),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
+  const anchor=t.rayAnchors[i];
+  if(!anchor.seedAt||p.distanceTo(anchor.seedAt)>=9.8){
+   anchor.seedAt=p.clone();
+   const offset=(i/7-.5)*Math.PI*.88,heading=t.root.rotation.y+offset,radius=4.2+(i%3)*1.45;
+   anchor.angle=heading;
+   const probe=new THREE.Vector3(p.x+Math.sin(heading)*radius,8,p.z+Math.cos(heading)*radius);
+   const downRay=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12),ground=downRay.intersectObject(groundPlane,false)[0];
+   anchor.pos.copy(ground?ground.point:new THREE.Vector3(probe.x,0,probe.z));
+  }
+  const delta=new THREE.Vector3(anchor.pos.x-p.x,0,anchor.pos.z-p.z),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
   t.ray.set(origin,d);t.ray.far=Math.min(9,distance||9);
-  const hit=t.ray.intersectObjects(rayTargets,false)[0];
-  const end=hit?hit.point:origin.clone().add(d.clone().multiplyScalar(t.ray.far));
+  const hit=t.ray.intersectObjects(rayTargets,false)[0],end=hit?hit.point:origin.clone().add(d.clone().multiplyScalar(t.ray.far));
   const line=t.gizmos[i];line.visible=showRayGizmos;line.material.color.set(hit?0xff3333:0x33ff77);line.geometry.setFromPoints([origin,end]);
  }
  const down=t.gizmos[8];down.visible=showRayGizmos;down.geometry.setFromPoints([origin,origin.clone().add(new THREE.Vector3(0,-9,0))]);

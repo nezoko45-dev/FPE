@@ -67,6 +67,7 @@ let move=dir;if(hit){const side=new THREE.Vector3(-dir.z,0,dir.x);const opts=[si
 const speed=t.speed*(nearest<2?0.15:1);const next=p.clone().add(move.multiplyScalar(speed*dt));if(!collides(next))p.copy(next);else{const sidestep=new THREE.Vector3(-dir.z,0,dir.x);for(const sign of [1,-1]){const q=p.clone().add(sidestep.clone().multiplyScalar(sign*speed*dt));if(!collides(q)){p.copy(q);break}}}
 t.root.rotation.y=Math.atan2(move.x,move.z);teacherAnim(t,nearest<2?'attack':nearest<18?'run':'walk');
 if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;teacherAnim(t,'attack');if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;document.querySelector('#msg').textContent='YOU WERE CAUGHT — press NEW GAME'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
+}
 function obstaclesMeshes(){return rayMeshes}
 const rayDirs=Array.from({length:8},(_,i)=>new THREE.Vector3(Math.cos(i*Math.PI/4),0,Math.sin(i*Math.PI/4)));
 

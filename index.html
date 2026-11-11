@@ -104,7 +104,7 @@ function updateTeacherGizmos(t){
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
    t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);
   }
-  const point=t.rayAnchors[i],delta=point.clone().sub(p).setY(0),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
+  const point=t.rayAnchors[i] instanceof THREE.Vector3?t.rayAnchors[i]:t.rayAnchors[i]?.pos,delta=point.clone().sub(p).setY(0),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
   t.ray.set(origin,d);t.ray.far=Math.min(6,distance||6);
   const hit=t.ray.intersectObjects(rayTargets,false)[0],end=hit?hit.point:point.clone().setY(.05);
   const line=t.gizmos[i];line.visible=showRayGizmos;line.material.color.set(hit?0xff3333:0x33ff77);line.geometry.setFromPoints([origin,end]);

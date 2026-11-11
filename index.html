@@ -65,14 +65,21 @@ function stepTeacher(t,dt){
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
  if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
  const origin=p.clone().add(new THREE.Vector3(0,.9,0)),near=nearbyRayMeshes(p,12);
- // 360-degree rays: choose any clear ground-supported direction around teacher, with no anchor lock.
+ // Navigate toward retained ground anchors; anchor points release and reseed only when farther than 6 units.
+ if(!t.rayAnchors)t.rayAnchors=[];
  let chosen=null,scoreBest=Infinity;
- for(let i=0;i<16;i++){
-  const heading=t.root.rotation.y+i*Math.PI*2/16,direction=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
-  t.ray.set(origin,direction);t.ray.far=6;const hit=t.ray.intersectObjects(near,false)[0];if(hit&&hit.distance<5.75)continue;
-  const probe=new THREE.Vector3(p.x+direction.x*5.5,8,p.z+direction.z*5.5);
-  if(!new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false).length)continue;
-  const score=target.distanceTo(p.clone().add(direction.clone().multiplyScalar(5.5)));if(score<scoreBest){scoreBest=score;chosen=direction}
+ for(let i=0;i<8;i++){
+  const heading=t.root.rotation.y+i*Math.PI*2/8;
+  if(!t.rayAnchors[i]||t.rayAnchors[i].distanceTo(p)>6){
+   const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
+   const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
+   t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);
+  }
+  const anchor=t.rayAnchors[i],direction=anchor.clone().sub(p).setY(0).normalize();
+  if(direction.lengthSq()<.01)continue;
+  t.ray.set(origin,direction);t.ray.far=Math.min(6,anchor.distanceTo(p));
+  const hit=t.ray.intersectObjects(near,false)[0];if(hit&&hit.distance<t.ray.far-.15)continue;
+  const score=target.distanceTo(anchor);if(score<scoreBest){scoreBest=score;chosen=direction}
  }
  if(!chosen){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  t.moveDir.copy(chosen); // all-around rays refresh every frame; movement is never anchor-bound.
@@ -88,14 +95,18 @@ const rayDirs=Array.from({length:8},(_,i)=>new THREE.Vector3(Math.cos(i*Math.PI/
 function updateTeacherGizmos(t){
  if(!t.gizmos)return;t.gizmos.forEach(g=>g.visible=showRayGizmos);
  const p=t.root.position,origin=p.clone().add(new THREE.Vector3(0,.9,0)),rayTargets=obstaclesMeshes();
- // 360-degree sensing ring, refreshed every frame; endpoints stay within a 6-unit radius.
+ // 360-degree ground anchors: retain each point while it stays within 6 units; release/reseed only after leaving that radius.
+ if(!t.rayAnchors)t.rayAnchors=[];
  for(let i=0;i<8;i++){
-  const heading=t.root.rotation.y+i*Math.PI*2/8,radius=6;
-  const probe=new THREE.Vector3(p.x+Math.sin(heading)*radius,8,p.z+Math.cos(heading)*radius);
-  const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
-  const endpoint=ground?ground.point:new THREE.Vector3(probe.x,0,probe.z),delta=endpoint.clone().sub(p).setY(0),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
+  const heading=t.root.rotation.y+i*Math.PI*2/8,anchor=t.rayAnchors[i];
+  if(!anchor||anchor.distanceTo(p)>6){
+   const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
+   const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
+   t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);
+  }
+  const point=t.rayAnchors[i],delta=point.clone().sub(p).setY(0),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];
   t.ray.set(origin,d);t.ray.far=Math.min(6,distance||6);
-  const hit=t.ray.intersectObjects(rayTargets,false)[0],end=hit?hit.point:origin.clone().add(d.clone().multiplyScalar(t.ray.far));
+  const hit=t.ray.intersectObjects(rayTargets,false)[0],end=hit?hit.point:point.clone().setY(.05);
   const line=t.gizmos[i];line.visible=showRayGizmos;line.material.color.set(hit?0xff3333:0x33ff77);line.geometry.setFromPoints([origin,end]);
  }
  const down=t.gizmos[8];down.visible=showRayGizmos;down.geometry.setFromPoints([origin,origin.clone().add(new THREE.Vector3(0,-9,0))]);

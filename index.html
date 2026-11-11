@@ -75,8 +75,8 @@ function stepTeacher(t,dt){
  }
  if(!chosen){ // all rays blocked: stay put and let anchors reseed, rather than chase through walls
  t.moveDir.multiplyScalar(.15);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
- if(!t.moveDir.lengthSq())t.moveDir.copy(chosen);else t.moveDir.lerp(chosen,1-Math.exp(-dt*4.5)).normalize();
- const speed=t.speed*(nearest<1.7?.12:1),move=t.moveDir.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));
+ t.moveDir.copy(chosen); // Move exactly along the selected clear anchor ray; no steering blend.
+ const speed=t.speed*(nearest<1.7?.12:1),move=chosen.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));
  if(!collides(next))p.copy(next);else t.moveDir.multiplyScalar(.15);
  const yaw=Math.atan2(move.x,move.z);t.root.rotation.y+=Math.atan2(Math.sin(yaw-t.root.rotation.y),Math.cos(yaw-t.root.rotation.y))*Math.min(1,dt*7);
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}

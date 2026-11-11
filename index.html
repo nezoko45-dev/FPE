@@ -65,25 +65,31 @@ function stepTeacher(t,dt){
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
  if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
  const origin=p.clone().add(new THREE.Vector3(0,.9,0)),near=nearbyRayMeshes(p,12);
- // Navigate toward retained ground anchors; anchor points release and reseed only when farther than 6 units.
+ // Ray-force steering: green rays pull toward their retained anchors; red/blocked rays push away.
  if(!t.rayAnchors)t.rayAnchors=[];
- let chosen=null,scoreBest=Infinity;
+ const force=new THREE.Vector3(),targetDist=target.distanceTo(p);
  for(let i=0;i<8;i++){
   const heading=t.root.rotation.y+i*Math.PI*2/8;
-  const existing=t.rayAnchors[i] instanceof THREE.Vector3?t.rayAnchors[i]:t.rayAnchors[i]?.pos;
-  if(!existing||existing.distanceTo(p)>7){
+  let raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;
+  if(!anchor||!anchor.isVector3||anchor.distanceTo(p)>7){
    const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
-   t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);
+   anchor=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);t.rayAnchors[i]=anchor;
   }
-  const raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos,direction=anchor?anchor.clone().sub(p).setY(0).normalize():new THREE.Vector3();
-  if(direction.lengthSq()<.01)continue;
-  t.ray.set(origin,direction);t.ray.far=Math.min(7,anchor.distanceTo(p));
-  const hit=t.ray.intersectObjects(near,false)[0];if(hit&&hit.distance<t.ray.far-.15)continue;
-  const score=anchor?target.distanceTo(anchor):Infinity;if(score<scoreBest){scoreBest=score;chosen=direction}
+  const toward=anchor.clone().sub(p).setY(0),dist=toward.length();if(dist<.05)continue;
+  const direction=toward.normalize();t.ray.set(origin,direction);t.ray.far=Math.min(7,dist);
+  const hit=t.ray.intersectObjects(near,false)[0],blocked=!!(hit&&hit.distance<t.ray.far-.15);
+  if(blocked){
+   // Repel from obstruction along the blocked ray, with stronger push for close hits.
+   force.addScaledVector(direction,-(1.25+Math.max(0,4-hit.distance)*.25));
+  }else{
+   // Green anchors closer to the target exert a stronger pull; this is ray-driven, not direct chase.
+   const anchorTargetDist=target.distanceTo(anchor),progress=Math.max(.08,1-anchorTargetDist/Math.max(1,targetDist+7));
+   force.addScaledVector(direction,progress*(.45+Math.max(0,1.5-dist/7)));
+  }
  }
- if(!chosen){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
- t.moveDir.copy(chosen); // all-around rays refresh every frame; movement is never anchor-bound.
+ if(force.lengthSq()<.025){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ const chosen=force.normalize();t.moveDir.copy(chosen);
  const speed=t.speed*(nearest<1.7?.12:1),move=chosen.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));
  if(!collides(next))p.copy(next);else t.moveDir.multiplyScalar(.15);
  const yaw=Math.atan2(move.x,move.z);t.root.rotation.y+=Math.atan2(Math.sin(yaw-t.root.rotation.y),Math.cos(yaw-t.root.rotation.y))*Math.min(1,dt*7);

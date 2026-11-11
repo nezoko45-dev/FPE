@@ -205,6 +205,24 @@ function teacherGroundClear(x,z){
  const hits=down.intersectObjects(scene.children,true);
  return hits.some(h=>h.object.visible&&h.face&&h.face.normal.y>.45&&h.point.y>=-.35&&h.point.y<=.25);
 }
+let showTeacherRayGizmos=false;const teacherRayViz=new THREE.Group();scene.add(teacherRayViz);
+function updateTeacherRayGizmos(){
+ for(const o of [...teacherRayViz.children]){teacherRayViz.remove(o);o.geometry?.dispose();o.material?.dispose()}
+ if(!showTeacherRayGizmos)return;
+ const positions=[],colors=[];
+ const add=(a,b,color)=>{positions.push(a.x,a.y,a.z,b.x,b.y,b.z);colors.push(color.r,color.g,color.b,color.r,color.g,color.b)};
+ for(const t of teachers){if(!t.root)continue;const p=t.root.position;
+  for(let i=0;i<24;i++){const angle=i*Math.PI*2/24,dir=new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)),len=2.8;
+   raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=len;
+   const blocked=raycaster.intersectObjects(wallMeshes,false).length>0;
+   const gx=p.x+dir.x*len,gz=p.z+dir.z*len,ground=teacherGroundClear(gx,gz);
+   const color=blocked?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33);
+   add(new THREE.Vector3(p.x,.12,p.z),new THREE.Vector3(gx,.12,gz),color);
+   add(new THREE.Vector3(gx,.12,gz),new THREE.Vector3(gx,-.35,gz),ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
+  }
+ }
+ if(positions.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));teacherRayViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));}
+}
 function teacherRayStep(t,target,speed,dt){
  const p=t.root.position,dx=target.x-p.x,dz=target.z-p.z,d=Math.hypot(dx,dz);if(d<1.6)return false;
  const desired=Math.atan2(dx,dz),step=Math.min(speed*dt,d-1.25);let best=null,bestScore=Infinity;
@@ -265,7 +283,7 @@ function startTest(){testOpen=true;document.exitPointerLock();let a=1+Math.floor
 function submitTest(){if(!testOpen)return;testOpen=false;document.querySelector('#testModal').style.display='none';if(Number(document.querySelector('#answer').value)===testAnswer)document.querySelector('#status').textContent='Test passed!';else fail();if(started&&!dead)renderer.domElement.requestPointerLock()}
 document.querySelector('#submitTest').onclick=submitTest;document.querySelector('#answer').onkeydown=e=>{if(e.key==='Enter')submitTest()};
 function throwOreo(){if(!oreo)return;oreo--;let p=player.pos.clone().add(new THREE.Vector3(Math.sin(player.yaw)*5,0,-Math.cos(player.yaw)*5));throwTarget=p;mode='oreo';hud()}
-document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyG'){showBridgeGizmos=!showBridgeGizmos;if(showBridgeGizmos){if(navNodes.size===0&&circle)rebuildNav(circle.position);drawBridgeGizmos();}else drawBridgeGizmos();}if(e.code==='KeyE'&&started&&!dead&&!testOpen){let it=closestItem();if(it){scene.remove(it.mesh);items.splice(items.indexOf(it),1);if(it.kind==='paper'){papers++;hud();startTest()}else{oreo++;document.querySelector('#status').textContent='Oreo collected. Q to throw!';hud()}}}if(e.code==='KeyQ'&&!testOpen)throwOreo()});document.addEventListener('keyup',e=>keys[e.code]=false);
+document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR'){showTeacherRayGizmos=!showTeacherRayGizmos;updateTeacherRayGizmos();}if(e.code==='KeyG'){showBridgeGizmos=!showBridgeGizmos;if(showBridgeGizmos){if(navNodes.size===0&&circle)rebuildNav(circle.position);drawBridgeGizmos();}else drawBridgeGizmos();}if(e.code==='KeyE'&&started&&!dead&&!testOpen){let it=closestItem();if(it){scene.remove(it.mesh);items.splice(items.indexOf(it),1);if(it.kind==='paper'){papers++;hud();startTest()}else{oreo++;document.querySelector('#status').textContent='Oreo collected. Q to throw!';hud()}}}if(e.code==='KeyQ'&&!testOpen)throwOreo()});document.addEventListener('keyup',e=>keys[e.code]=false);
 document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();initializeWorldLighting();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
@@ -357,7 +375,7 @@ if(circle){
  }
 }
 }
-function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);renderer.render(scene,camera)}loop();
+function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);updateTeacherRayGizmos();renderer.render(scene,camera)}loop();
 // Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
 document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});

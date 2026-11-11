@@ -19,9 +19,9 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 // No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f);
-const obstacles=[],floors=[],items=[],survivors=[],teachers=[],lights=[];
-function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(solid)obstacles.push(new THREE.Box3().setFromObject(o));return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.rayObstacle=true;return o}
+const obstacles=[],rayMeshes=[],floors=[],items=[],survivors=[],teachers=[],lights=[];
+function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(solid){obstacles.push(new THREE.Box3().setFromObject(o));rayMeshes.push(o)}return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.rayObstacle=true;rayMeshes.push(o);return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false); // walls stop below ceiling; no opaque roof meshes
 // Open room connections: no overlapping tile-boundary walls that cage the player.
 if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
@@ -65,7 +65,7 @@ const speed=t.speed*(nearest<2?0.15:1);const next=p.clone().add(move.multiplySca
 t.root.rotation.y=Math.atan2(move.x,move.z);teacherAnim(t,nearest<2?'attack':nearest<18?'run':'walk');
 if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;teacherAnim(t,'attack');if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;document.querySelector('#msg').textContent='YOU WERE CAUGHT — press NEW GAME'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
 }
-function obstaclesMeshes(){return scene.children.filter(o=>o.isMesh&&(o.userData.rayObstacle||obstacles.some(b=>b.intersectsBox(new THREE.Box3().setFromObject(o)))))}
+function obstaclesMeshes(){return rayMeshes}
 const rayDirs=Array.from({length:8},(_,i)=>new THREE.Vector3(Math.cos(i*Math.PI/4),0,Math.sin(i*Math.PI/4)));
 
 function updateTeacherGizmos(t){if(!t.gizmos)return;t.gizmos.forEach(g=>g.visible=showRayGizmos);const p=t.root.position,origin=p.clone().add(new THREE.Vector3(0,.9,0));const rayTargets=obstaclesMeshes();if(!t.rayAnchors)t.rayAnchors=Array.from({length:8},(_,i)=>({angle:i*Math.PI/4,pos:new THREE.Vector3(p.x+Math.cos(i*Math.PI/4)*4,0,p.z+Math.sin(i*Math.PI/4)*4)}));for(let i=0;i<8;i++){const anchor=t.rayAnchors[i];if(Math.hypot(anchor.pos.x-p.x,anchor.pos.z-p.z)>9.8){anchor.angle=Math.random()*Math.PI*2;const radius=3+Math.random()*5.5;anchor.pos.set(p.x+Math.cos(anchor.angle)*radius,0,p.z+Math.sin(anchor.angle)*radius)}const delta=new THREE.Vector3(anchor.pos.x-p.x,0,anchor.pos.z-p.z),distance=delta.length(),d=distance>.01?delta.normalize():rayDirs[i];t.ray.set(origin,d);t.ray.far=Math.min(9,distance||9);const hit=t.ray.intersectObjects(rayTargets,false)[0];const end=hit?hit.point:origin.clone().add(d.clone().multiplyScalar(t.ray.far));const line=t.gizmos[i];line.visible=showRayGizmos;line.material.color.set(hit?0xff3333:0x33ff77);line.geometry.setFromPoints([origin,end])}const down=t.gizmos[8];down.visible=showRayGizmos;down.geometry.setFromPoints([origin,origin.clone().add(new THREE.Vector3(0,-9,0))])}

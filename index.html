@@ -319,10 +319,13 @@ function applyDayNight(){
  }
  nightBlend=THREE.MathUtils.smoothstep(blend,0,1);
  cycleSky.copy(daySky).lerp(nightSky,nightBlend);
- scene.background.copy(chaseVisual?chaseColor:cycleSky);
- scene.fog.color.copy(chaseVisual?chaseColor:cycleSky);
- hemi.intensity=THREE.MathUtils.lerp(ambientNormal,.45,nightBlend)*(chaseVisual?.45:1);
- sun.intensity=THREE.MathUtils.lerp(sunNormal,.18,nightBlend)*(chaseVisual?.2:1);
+ // Keep chase tint out of global scene/fog: global red fog can obscure the
+ // entire school and make interior geometry appear to vanish.
+ scene.background.copy(cycleSky);
+ scene.fog.color.copy(cycleSky);
+ // Chase changes lighting only modestly; preserve visibility at both day/night.
+ hemi.intensity=THREE.MathUtils.lerp(ambientNormal,.75,nightBlend)*(chaseVisual?.8:1);
+ sun.intensity=THREE.MathUtils.lerp(sunNormal,.18,nightBlend)*(chaseVisual?.65:1);
  sun.position.set(15,THREE.MathUtils.lerp(30,12,nightBlend),10);
  // Interior fixtures stay on through the entire exterior cycle.
  ceilingLights.forEach(l=>{l.lamp.visible=true;l.glow.visible=true});

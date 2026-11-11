@@ -22,8 +22,11 @@ const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat
 const obstacles=[],floors=[],items=[],survivors=[],teachers=[],lights=[];
 function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(solid)obstacles.push(new THREE.Box3().setFromObject(o));return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false); // walls stop below ceiling; no opaque roof meshes
-box(x,1.5,z-4.9,10,3,.2,wallMat);box(x-4.9,1.5,z,.2,3,10,wallMat);box(x+4.9,1.5,z,.2,3,10,wallMat);
-if(Math.random()>.25)box(x-1.5,1.5,z+4.9,3,3,.2,wallMat);if(Math.random()>.25)box(x+2.2,1.5,z+4.9,4,3,.2,wallMat);
+// Open room connections: no overlapping tile-boundary walls that cage the player.
+if(z===-30)box(x,1.5,z-4.9,10,3,.2,wallMat);
+if(x===-30)box(x-4.9,1.5,z,.2,3,10,wallMat);
+if(x===30)box(x+4.9,1.5,z,.2,3,10,wallMat);
+// South perimeter is deliberately open for a reliable exit.
 for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat);box(x+(i?2:-2),1.03,z+(i?1:-1),1.65,.08,1.05,trimMat)}
 const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fixture.position.set(x,2.85,z);scene.add(fixture);const lamp=new THREE.PointLight(0xffe5a0,1.8,8);lamp.position.set(x,2.55,z);scene.add(lamp);lights.push({fixture,lamp});
 }

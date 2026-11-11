@@ -239,41 +239,21 @@ function updateTeacherRayGizmos(){
 }
 function teacherRayStep(t,target,speed,dt){
  const p=t.root.position,distTarget=Math.hypot(target.x-p.x,target.z-p.z);if(distTarget<1.6)return false;
- // Ray anchors are navigation waypoints, not direct target steering.
- if(!t.rayAnchors)t.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(p.x+Math.sin(i*Math.PI*2/16)*4,0,p.z+Math.cos(i*Math.PI*2/16)*4)}));
- let best=null,bestScore=Infinity;
- for(const cell of t.rayAnchors){
-  const away=Math.hypot(cell.pos.x-p.x,cell.pos.z-p.z);
-  if(away>9.5||away<1.1){
-   // Each anchor releases separately and reseeds around the teacher.
-   cell.angle=Math.random()*Math.PI*2;const radius=3+Math.random()*5.5;
-   cell.pos.set(p.x+Math.sin(cell.angle)*radius,0,p.z+Math.cos(cell.angle)*radius);
-  }
+ if(!t.rayAnchors)t.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(p.x+Math.sin(i*Math.PI*2/16)*2.6,0,p.z+Math.cos(i*Math.PI*2/16)*2.6)}));
+ const toward=Math.atan2(target.x-p.x,target.z-p.z);let best=null,bestScore=Infinity;
+ for(let i=0;i<t.rayAnchors.length;i++){
+  const cell=t.rayAnchors[i],angle=toward+(i-8)*Math.PI/16,radius=2.4+(i%4)*.35;
+  cell.angle=angle;cell.pos.set(p.x+Math.sin(angle)*radius,0,p.z+Math.cos(angle)*radius);
   const dx=cell.pos.x-p.x,dz=cell.pos.z-p.z,length=Math.hypot(dx,dz);if(length<.1)continue;
-  const dir=new THREE.Vector3(dx/length,0,dz/length),origin=new THREE.Vector3(p.x,.9,p.z);
-  raycaster.set(origin,dir);raycaster.far=length;
-  const hit=raycaster.intersectObjects(wallMeshes,false)[0];
-  // Release blocked anchors immediately so red rays never remain trapped forever.
-  if(hit&&hit.distance<length-.08){
-   cell.angle=Math.random()*Math.PI*2;const radius=3+Math.random()*5.5;
-   cell.pos.set(p.x+Math.sin(cell.angle)*radius,0,p.z+Math.cos(cell.angle)*radius);
-   continue;
-  }
-  if(!teacherGroundClear(cell.pos.x,cell.pos.z)){
-   // No floor at this anchor: independently reseed it onto a nearby probe.
-   cell.angle=Math.random()*Math.PI*2;const radius=2.5+Math.random()*5;
-   cell.pos.set(p.x+Math.sin(cell.angle)*radius,0,p.z+Math.cos(cell.angle)*radius);
-   continue;
-  }
-  const step=Math.min(speed*dt,length),nx=p.x+dir.x*step,nz=p.z+dir.z*step;
-  if(!teacherGroundClear(nx,nz))continue;
-  const remaining=Math.hypot(target.x-nx,target.z-nz);
-  // Prefer anchors that make measurable progress, with a slight preference for closer rays.
-  const score=remaining+length*.025;
-  if(score<bestScore){bestScore=score;best={dir,step}}
+  const dir=new THREE.Vector3(dx/length,0,dz/length);raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=length;
+  const hit=raycaster.intersectObjects(wallMeshes,false)[0];if(hit&&hit.distance<length-.12)continue;
+  if(!teacherGroundClear(cell.pos.x,cell.pos.z))continue;
+  const step=Math.min(speed*dt,length,hit?Math.max(0,hit.distance-.35):length),nx=p.x+dir.x*step,nz=p.z+dir.z*step;
+  if(step<.08||!teacherGroundClear(nx,nz))continue;
+  const score=Math.hypot(target.x-nx,target.z-nz)+Math.abs(i-8)*.035;if(score<bestScore){bestScore=score;best={dir,step}}
  }
- if(!best)return false;
- p.x+=best.dir.x*best.step;p.z+=best.dir.z*best.step;t.root.rotation.y=Math.atan2(best.dir.x,best.dir.z);return true;
+ if(!best){const dir=new THREE.Vector3(target.x-p.x,0,target.z-p.z).normalize(),step=Math.min(speed*dt,.65);raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=step;const hit=raycaster.intersectObjects(wallMeshes,false)[0],nx=p.x+dir.x*step,nz=p.z+dir.z*step;if((!hit||hit.distance>step-.12)&&teacherGroundClear(nx,nz))best={dir,step}}
+ if(!best)return false;p.x+=best.dir.x*best.step;p.z+=best.dir.z*best.step;t.root.rotation.y=Math.atan2(best.dir.x,best.dir.z);return true;
 }
 function updateTeachers(dt){
  for(const t of teachers){if(!t.root)continue;

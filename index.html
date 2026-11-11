@@ -65,29 +65,19 @@ function stepTeacher(t,dt){
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
  if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
  const origin=p.clone().add(new THREE.Vector3(0,.9,0)),near=nearbyRayMeshes(p,12);
- // Ray-force steering: green rays pull toward their retained anchors; red/blocked rays push away.
- if(!t.rayAnchors)t.rayAnchors=[];
- const force=new THREE.Vector3(),targetDist=target.distanceTo(p);
- for(let i=0;i<8;i++){
-  const heading=t.root.rotation.y+i*Math.PI*2/8;
-  let raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;
-  if(!anchor||!anchor.isVector3){
-   const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
-   const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
-   anchor=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);t.rayAnchors[i]=anchor;
-  }
-  const toward=anchor.clone().sub(p).setY(0),dist=toward.length();if(dist<.05)continue;
-  const direction=toward.normalize();t.ray.set(origin,direction);t.ray.far=Math.min(7,dist);
-  const hit=t.ray.intersectObjects(near,false)[0],blocked=!!(hit&&hit.distance<t.ray.far-.15);
-  if(blocked){
-   // Repel from obstruction along the blocked ray, with stronger push for close hits.
-   force.addScaledVector(direction,-(1.25+Math.max(0,4-hit.distance)*.25));
-  }else{
-   // Green anchors closer to the target exert a stronger pull; this is ray-driven, not direct chase.
-   const anchorTargetDist=target.distanceTo(anchor),progress=Math.max(.08,1-anchorTargetDist/Math.max(1,targetDist+7));
-   force.addScaledVector(direction,progress*(.45+Math.max(0,1.5-dist/7)));
-  }
+ // Directional steering is local to the moving teacher; persistent world anchors never pull it back.
+ const force=new THREE.Vector3(),toTarget=target.clone().sub(p).setY(0),targetDir=toTarget.lengthSq()>.01?toTarget.normalize():new THREE.Vector3();
+ let bestClear=null,bestScore=-Infinity;
+ for(let i=0;i<16;i++){
+  const heading=t.root.rotation.y+i*Math.PI*2/16,direction=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
+  t.ray.set(origin,direction);t.ray.far=7;
+  const hit=t.ray.intersectObjects(near,false)[0],clearance=hit?hit.distance:7;
+  if(hit){force.addScaledVector(direction,-Math.max(0,2.2-clearance)*.8);continue}
+  const score=direction.dot(targetDir)+.12*(clearance/7);
+  if(score>bestScore){bestScore=score;bestClear=direction}
  }
+ if(bestClear)force.addScaledVector(bestClear,1.1);
+ force.addScaledVector(targetDir,.9);
  if(force.lengthSq()<.025){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  const chosen=force.normalize();t.moveDir.copy(chosen);
  const speed=t.speed*(nearest<1.7?.12:1),move=chosen.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));

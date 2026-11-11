@@ -1,429 +1,64 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>FPE: TEST NIGHT</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FPE — Rebuilt</title>
 <style>
-*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#10131b;color:#fff;font:15px system-ui}canvas{display:block}#hud{position:fixed;inset:12px auto auto 12px;z-index:3;background:#111b;padding:12px 16px;border:1px solid #ffffff33;border-radius:12px;min-width:240px;backdrop-filter:blur(8px)}#hud b{color:#ffdb64}#help{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:#101b;padding:10px 15px;border-radius:10px;text-align:center;color:#ddd}#overlay{position:fixed;inset:0;display:grid;place-items:center;background:#080a10cc;z-index:5}#panel{max-width:520px;margin:20px;padding:28px;background:#171b27;border:1px solid #ffffff2b;border-radius:18px;text-align:center}button{background:#ffdb64;border:0;border-radius:10px;padding:12px 22px;font-weight:800;cursor:pointer}#msg{color:#ffb7bd;min-height:24px}#testModal{display:none;position:fixed;inset:0;z-index:8;background:#05060de8;place-items:center}#testBox{background:#202432;border:2px solid #ffdb64;border-radius:16px;padding:28px;width:min(420px,92vw);text-align:center}#answer{font-size:22px;width:130px;padding:8px;text-align:center;border-radius:8px;margin:12px}
+*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#111;color:#fff;font:15px system-ui}canvas{display:block}#hud{position:fixed;z-index:3;top:12px;left:12px;background:#101722dd;border:1px solid #ffffff35;border-radius:10px;padding:12px 16px;min-width:220px;line-height:1.65}#hud b{color:#ffe36a}#msg{color:#ff8c8c}#start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#10131beF}#panel{max-width:560px;padding:32px;background:#202635;border:1px solid #ffffff35;border-radius:16px;text-align:center}button{font:inherit;font-weight:700;padding:12px 24px;border:0;border-radius:9px;background:#f0d65a;color:#181818;cursor:pointer}#hint{opacity:.75;font-size:13px}
 </style></head><body>
-<div id="hud"><b>FPE: TEST NIGHT</b><div id="stats">Papers: 0 · Oreos: 0</div><div id="health">Health: 100 / 100</div><div id="status">Stay alert…</div><div id="msg"></div></div>
-<div id="help">WASD move · Mouse look · E collect paper/Oreo · Q throw Oreo · Shift sprint</div>
-<div id="testModal"><div id="testBox"><h2>MISS CIRCLE TEST</h2><p id="question">Solve this!</p><input id="answer" type="number" autocomplete="off"><br><button id="submitTest">SUBMIT</button></div></div><div id="overlay"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><p>Find test papers around the procedural school. Complete them before Miss Circle notices.</p><p>Fail a test and she investigates your last position… then hunts you.</p><p>Oreos can distract her. Collect with <b>E</b>, throw with <b>Q</b>.</p><button id="start">ENTER SCHOOL</button></div></div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"}}</script>
+<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span></div>
+<div id="start"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><h2>REBUILT</h2><p>Fresh world architecture · same survival loop</p><p>Collect papers and Oreos. Survive the teachers.</p><button id="play">NEW GAME</button><p id="hint">WASD move · Mouse look · Shift sprint · E attack · Esc release mouse</p></div></div>
 <script type="module">
-import * as THREE from 'three';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-const scene=new THREE.Scene();const normalColor=new THREE.Color(0x9ba8b9),chaseColor=new THREE.Color(0xb00000);scene.background=normalColor.clone();scene.fog=new THREE.Fog(normalColor,35,105);let chaseVisual=false;function setChaseVisual(on){if(chaseVisual===on)return;chaseVisual=on;applyDayNight();}
-const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js';
+import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/loaders/GLTFLoader.js';
+const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.1,260);camera.rotation.order='YXZ';
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
-const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);const ambientNormal=2,sunNormal=2.3;let dayPhase=0;const DAY_DURATION=150,NIGHT_DURATION=480,TRANSITION_SECONDS=9;let isDay=true,nightBlend=0;const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),cycleSky=new THREE.Color(daySky);scene.fog=new THREE.Fog(daySky,300,500);function setChaseLighting(on){hemi.intensity=THREE.MathUtils.lerp(ambientNormal,.45,nightBlend)*(on?.45:1);sun.intensity=THREE.MathUtils.lerp(sunNormal,.18,nightBlend)*(on?.2:1);}
-const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const floorMat=mat(0xaaa7a0),wallMat=mat(0xd8d4c9),trimMat=mat(0x625c5a);
-const floorMeshes=[];function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(m===floorMat)floorMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
-const walls=[],wallMeshes=[],schoolRoofs=[],chunks=new Map(),CHUNK=20;let navDirty=true;
-const clutterMat=mat(0x6f4b32),paperMat=mat(0xf2ead2),roofMat=mat(0x777b83);
-const ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
-function makeChunk(cx,cz){
- const id=cx+','+cz;if(chunks.has(id))return;chunks.set(id,true);navDirty=true;
- for(let ax=0;ax<2;ax++)for(let az=0;az<2;az++){
-  let gx=cx*2+ax,gz=cz*2+az,x=gx*10,z=gz*10;
-  // Continuous floor, overhead ceiling, and roof slab for every generated tile.
-  const floor=block(x,-.16,z,10,.3,10,floorMat,false);floor.userData.schoolMesh=true;
-  const roofA=block(x,3.15,z,10,.3,10,roofMat,false);const roofB=block(x,3.45,z,10,.3,10,roofMat,false);roofA.userData.schoolMesh=true;roofB.userData.schoolMesh=true;roofA.visible=false;roofB.visible=false;schoolRoofs.push(roofA,roofB);
-  const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);lamp.visible=true;glow.visible=true;ceilingLights.push({lamp,glow});
-  if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){
-   for(const w of [block(x,1.5,z-4.5,9,3,.25,wallMat),block(x-4.5,1.5,z,.25,3,9,wallMat),block(x+4.5,1.5,z,.25,3,9,wallMat)])w.userData.schoolMesh=true;
-   if(Math.random()>.35)block(x-1.8,1.5,z+4.5,2.8,3,.25,wallMat);
-   if(Math.random()>.35)block(x+2,1.5,z+4.5,4,3,.25,wallMat);
-  }
-  // Scatter desk-height book stacks and loose papers throughout each hall tile.
-  for(let k=0;k<3;k++){
-   const bx=x+(Math.random()*7-3.5),bz=z+(Math.random()*7-3.5);
-   const book=new THREE.Mesh(new THREE.BoxGeometry(.42,.12,.3),clutterMat);book.position.set(bx,.12+(Math.random()*.35),bz);book.rotation.y=Math.random()*Math.PI;book.castShadow=true;book.receiveShadow=true;scene.add(book);
-   const paper=new THREE.Mesh(new THREE.BoxGeometry(.34,.012,.26),paperMat);paper.position.set(x+(Math.random()*8-4),.025,z+(Math.random()*8-4));paper.rotation.y=Math.random()*Math.PI;paper.castShadow=true;scene.add(paper);
-  }
- }
+const hemi=new THREE.HemisphereLight(0xe8f1ff,0x514638,1.9);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.1);sun.position.set(18,32,12);scene.add(sun);
+const DAY=150,NIGHT=480,TRANS=12;let phaseTime=0,nightMix=0,started=false,dead=false,hp=100,papers=0,oreos=0,elapsed=0,lastAttack=-99;
+const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=new THREE.Color();scene.background=daySky.clone();
+// No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
+const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
+const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f);
+const obstacles=[],floors=[],items=[],survivors=[],teachers=[],lights=[];
+function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(solid)obstacles.push(new THREE.Box3().setFromObject(o));return o}
+function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false); // walls stop below ceiling; no opaque roof meshes
+box(x,1.5,z-4.9,10,3,.2,wallMat);box(x-4.9,1.5,z,.2,3,10,wallMat);box(x+4.9,1.5,z,.2,3,10,wallMat);
+if(Math.random()>.25)box(x-1.5,1.5,z+4.9,3,3,.2,wallMat);if(Math.random()>.25)box(x+2.2,1.5,z+4.9,4,3,.2,wallMat);
+for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat);box(x+(i?2:-2),1.03,z+(i?1:-1),1.65,.08,1.05,trimMat)}
+const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fixture.position.set(x,2.85,z);scene.add(fixture);const lamp=new THREE.PointLight(0xffe5a0,1.8,8);lamp.position.set(x,2.55,z);scene.add(lamp);lights.push({fixture,lamp});
 }
-function ensureChunksAround(p){let cx=Math.floor(p.x/CHUNK),cz=Math.floor(p.z/CHUNK),before=chunks.size;for(let x=cx-1;x<=cx+1;x++)for(let z=cz-1;z<=cz+1;z++)makeChunk(x,z);if(chunks.size!==before)navDirty=true}
-ensureChunksAround(new THREE.Vector3(0,0,0));
-
-// Dynamic Miss Circle navigation: grid follows the generated world, not the original map bounds.
-const navCell=5,navNodes=new Map(),gridChunks=new Set(),raycaster=new THREE.Raycaster();
-const navCenter=new THREE.Vector3(0,0,0);
-function cellKey(ix,iz){return ix+','+iz}
-function cellPos(ix,iz){return new THREE.Vector3(ix*navCell,0,iz*navCell)}
-function clearBridge(a,b){const d=b.clone().sub(a),len=d.length();raycaster.set(a.clone().setY(1),d.normalize());raycaster.far=len;return !raycaster.intersectObjects(wallMeshes,false).length}
-// Bridge gizmos: green = connected cell rays, red = blocked neighbor rays.
-const bridgeViz=new THREE.Group();scene.add(bridgeViz);let bridgeLines=null,showBridgeGizmos=false;let gridOffset=new THREE.Vector3();
-function drawBridgeGizmos(){
- // Gizmo group follows the player continuously; its cells are rebuilt in world coordinates.
- bridgeViz.position.set(0,0,0);
- // Dispose previous debug geometry/materials so chunk-driven rebuilds do not leak GPU memory.
- for(const o of [...bridgeViz.children]){bridgeViz.remove(o);o.geometry?.dispose();if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material?.dispose()}
- if(!showBridgeGizmos)return;const pts=[];
- // Each node is a visible spaced cell; each green segment is a successful ray bridge to its neighbor.
- for(const n of navNodes.values())for(const q of n.links){if(n.ix<q.ix||(n.ix===q.ix&&n.iz<q.iz))pts.push(n.p.x,.16,n.p.z,q.p.x,.16,q.p.z)}
- if(pts.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));bridgeViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x33ff77,transparent:true,opacity:.8})))}
- // Grid-cell cube gizmos removed; optional bridge lines remain.
-}
-function addGridChunk(cx,cz){const id=cx+','+cz;if(gridChunks.has(id))return;gridChunks.add(id);const minX=Math.floor(cx*CHUNK/navCell),maxX=Math.ceil((cx+1)*CHUNK/navCell),minZ=Math.floor(cz*CHUNK/navCell),maxZ=Math.ceil((cz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});}
-function rebuildNav(center){
- // Permanently retain grid chunks; only connect newly-created cells and their neighbors.
- const cx=Math.floor(center.x/CHUNK),cz=Math.floor(center.z/CHUNK);
- for(let x=cx-1;x<=cx+1;x++)for(let z=cz-1;z<=cz+1;z++)addGridChunk(x,z);
- // Recheck every cell on each rebuild so newly streamed cells connect to old cells too.
- // Eight ray directions: cardinal + diagonal neighbors.
- for(const n of navNodes.values()){
-  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
-   const q=navNodes.get(cellKey(n.ix+dx,n.iz+dz));
-   if(q&&clearBridge(n.p,q.p)&&!n.links.includes(q))n.links.push(q);
-  }
- }
- if(showBridgeGizmos)drawBridgeGizmos();navDirty=false;
-}
-// Generic ray-bridge steering shared by Miss Circle and survivor agents.
-function steerAgent(agent,target,speed,dt){
- // Steer on the OUTSIDE perimeter of blocked ray cells: use the cell's
- // exposed bridge endpoints, never an interior point embedded in wall geometry.
- const here=nearestNode(agent.position),goal=nearestNode(target);let wp=agent.userData.waypoint;
- if(wp&&agent.position.distanceTo(wp)<=0.8)wp=null;
- if(!wp){
-  if(clearBridge(agent.position,target))wp=target.clone();
-  else if(here&&goal){
-   // Choose a clear immediate neighbor that makes progress toward the target.
-   // Don't require a direct neighbor-to-target ray: that caused deadlocks at doors.
-   const options=here.links.filter(n=>clearBridge(agent.position,n.p));
-   options.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));
-   wp=options[0]?.p.clone()||null;
-  }
- }
- agent.userData.waypoint=wp;if(!wp)return false;
- const d=wp.clone().sub(agent.position).setY(0),len=d.length();if(len<1e-4)return false;
- const step=d.normalize().multiplyScalar(Math.min(speed*dt,len));agent.position.add(step);
- const yaw=Math.atan2(step.x,step.z);let diff=((yaw-agent.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;agent.rotation.y+=diff*Math.min(1,dt*5);return true;
-}
-function survivorSpawnPoint(){
- // Spawn in a separate open hall well away from the player's current room.
- const playerRoomX=0,playerRoomZ=0;
- for(let tries=0;tries<160;tries++){
-  const x=(Math.random()*120-60),z=(Math.random()*120-60);
-  const p=new THREE.Vector3(x,0,z),box=new THREE.Box3(new THREE.Vector3(x-.45,0,z-.45),new THREE.Vector3(x+.45,1.8,z+.45));
-  const roomX=Math.floor(x/10),roomZ=Math.floor(z/10);
-  if(Math.abs(roomX-playerRoomX)<=1&&Math.abs(roomZ-playerRoomZ)<=1)continue;
-  if(p.length()<24)continue;
-  if(!walls.some(w=>w.intersectsBox(box)))return p;
- }
- // Guaranteed distant fallback relative to player.
- return new THREE.Vector3(35,0,35);
-}
-function makeSurvivor(index){
- const root=new THREE.Group(),skin=mat([0xd9a27c,0xc58b65,0xf0c8a5,0x9b684b][index%4]),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][index%4]),pants=mat(0x303747),shoe=mat(0x202020),hair=mat(0x34251e);
- const part=(geo,m,x,y,z)=>{const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;root.add(o);return o};
- part(new THREE.SphereGeometry(.22,10,8),skin,0,1.62,0);part(new THREE.SphereGeometry(.23,10,8),hair,0,1.78,-.025);
- part(new THREE.BoxGeometry(.48,.62,.25),shirt,0,1.12,0);part(new THREE.BoxGeometry(.18,.55,.18),skin,-.32,1.12,0);part(new THREE.BoxGeometry(.18,.55,.18),skin,.32,1.12,0);
- const legs=[part(new THREE.BoxGeometry(.19,.55,.2),pants,-.13,.48,0),part(new THREE.BoxGeometry(.19,.55,.2),pants,.13,.48,0)];
- const arms=[root.children[3],root.children[4]];
- const feet=[part(new THREE.BoxGeometry(.2,.12,.32),shoe,-.13,.12,.05),part(new THREE.BoxGeometry(.2,.12,.32),shoe,.13,.12,.05)];
- scene.add(root);root.position.copy(survivorSpawnPoint());
- return {root,legs,arms,feet,phase:Math.random()*6,task:'loot',dead:false,respawnAt:0,hp:100,maxHp:100};
-}
-const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
-function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
-function updateSurvivors(dt){
- for(const a of survivors){
-  if(!a.dead)a.root.visible=true;
-  if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.hp=a.maxHp;a.root.visible=true;a.root.position.copy(survivorSpawnPoint());a.root.userData.waypoint=null;a.movedCellAt=elapsed;a.movedCellPos=a.root.position.clone();a.lastOccupiedCell=null;a.lastTargetId=null;a.lastTargetDistance=0;a.stuckSince=elapsed;}else continue;}
-  // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
-  let targetItem=null,best=Infinity;
-  for(const it of items){const d=a.root.position.distanceTo(it.mesh.position);if(d<best){best=d;targetItem=it}}
-  if(targetItem&&best<1.15){
-   scene.remove(targetItem.mesh);items.splice(items.indexOf(targetItem),1);
-   if(targetItem.kind==='paper')papers++;else oreo++;
-   hud();
-   if(targetItem.kind==='oreo'&&circle){circle.userData.distractionUntil=elapsed+5;circle.userData.distractionPoint=a.root.position.clone()}
-   targetItem=null;
-  }
-  if(targetItem){
-   // Stuck watchdog: if movement makes no progress for 1.2s, discard the
-   // locked waypoint and let simple steering pick another nearby bridge.
-   const targetDistance=a.root.position.distanceTo(targetItem.mesh.position);
-   if(a.lastTargetId!==targetItem||!a.lastTargetDistance||targetDistance<a.lastTargetDistance-.08){a.lastTargetId=targetItem;a.lastTargetDistance=targetDistance;a.stuckSince=elapsed}
-   else if(elapsed-(a.stuckSince||elapsed)>1.2){a.root.userData.waypoint=null;a.stuckSince=elapsed;a.lastTargetDistance=targetDistance}
-   steerAgent(a.root,targetItem.mesh.position,4.2,dt);animateSurvivor(a,true,dt)
-  }else{a.lastTargetId=null;a.lastTargetDistance=0;animateSurvivor(a,false,dt)}
-  // Record survivor cell movement for Miss Circle's patrol trigger.
-  const cellX=Math.floor(a.root.position.x/navCell),cellZ=Math.floor(a.root.position.z/navCell);
-  if(a.lastOccupiedCell!==cellX+','+cellZ){a.lastOccupiedCell=cellX+','+cellZ;a.movedCellAt=elapsed;a.movedCellPos=a.root.position.clone();}
- }
-}
-function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
-// Ray-bridge steering only. Hold each selected bridge waypoint to prevent frame-to-frame jitter.
-// Miss Circle now uses the exact same independent ray-anchor locomotion as Miss Thavel.
-let circleRayAgent=null;
-function ensureCircleRayAgent(){
- if(!circle||!circleRayAgent)circleRayAgent={root:circle,rayAnchors:null};
- circleRayAgent.root=circle;
- if(!circleRayAgent.rayAnchors)circleRayAgent.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(circle.position.x+Math.sin(i*Math.PI*2/16)*4,0,circle.position.z+Math.cos(i*Math.PI*2/16)*4)}));
- return circleRayAgent;
-}
-function moveCircleStraightToward(target,speed,dt){moveCircleToward(target,speed,dt)}
-function moveCircleToward(target,speed,dt){
- if(!circle)return;
- // Teacher-style rays: 16 persistent anchors independently release/reseed,
- // raycast against walls, verify floor, and select a progress-making bridge.
- teacherRayStep(ensureCircleRayAgent(),target,speed,dt);
-}
-// player
+for(let x=-30;x<=30;x+=10)for(let z=-30;z<=30;z+=10)schoolTile(x,z);
+box(0,-.45,0,100,.5,100,mat(0x424a43),false);
+// Add more rooms/halls around the playable school perimeter.
+for(let x=-50;x<=50;x+=10){box(x,1.5,-40,10,3,.2,wallMat);box(x,1.5,40,10,3,.2,wallMat)}
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
-let keys={},locked=false,started=false,dead=false,playerHp=100,playerMaxHp=100,playerMovedCellAt=0,lastPlayerCell='',papers=0,oreo=0,failedAt=null,mode='calm',circle=null,mixer=null,acts={},active='',lastPaper=0,lastOreo=0,lastFail=0,throwTarget=null,testOpen=false,testAnswer=0,playerRespawnAt=0;
-const loader=new GLTFLoader();loader.load('./fundamental_paper_education_-_miss_circles.glb',g=>{circle=g.scene;circle.scale.setScalar(.85);circle.position.copy(circleHome);scene.add(circle);mixer=new THREE.AnimationMixer(circle);g.animations.forEach(c=>acts[c.name.toLowerCase()]=mixer.clipAction(c));playAnim('idle');document.getElementById('status').textContent='Miss Circle is somewhere in the school.'},undefined,e=>console.warn('Miss Circle model failed',e));
-function playAnim(name){if(!mixer)return;let clip=Object.keys(acts).find(k=>k.includes(name));if(!clip)return;let a=acts[clip];if(active===clip&&a.isRunning())return;Object.values(acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();active=clip}
-const teachers=[];const circleHome=new THREE.Vector3(12,0,12);
-function loadTeacher(name,file,x,z){
- const t={name,root:null,mixer:null,acts:{},active:'',pos:new THREE.Vector3(x,0,z),waypoint:null,patrolAt:0,attackUntil:0,lastDamageAt:-999};
- loader.load('./'+file,g=>{
-  t.root=g.scene;t.root.scale.setScalar(name==='Miss Thavel'?.55:.85);t.root.position.copy(t.pos);scene.add(t.root);
-  t.mixer=new THREE.AnimationMixer(t.root);g.animations.forEach(c=>t.acts[c.name.toLowerCase()]=t.mixer.clipAction(c));
-  console.log(name+' animation clips:',g.animations.map(c=>c.name));
-  teacherAnim(t,'idle');
- },undefined,e=>console.warn(name+' model failed',e));
- teachers.push(t);return t;
+const loader=new GLTFLoader();const assets={circle:'fundamental_paper_education_-_miss_circles.glb',thavel:'fundamental_paper_education_-_miss_thavel.glb',bloomie:'fundamental_paper_education_-_miss_bloomie.glb'};
+function makeSurvivor(i){const g=new THREE.Group();const body=new THREE.Mesh(new THREE.CapsuleGeometry(.27,.65,4,8),mat([0xeee5dc,0xc9d8ee,0xe8c9d4,0xd4e8c9][i]));body.position.y=1;g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(.23,12,10),mat(0xf0d2bd));head.position.y=1.55;g.add(head);g.position.set((i-1.5)*3,0,7+Math.random()*4);scene.add(g);return {root:g,hp:100,dead:false,respawn:0,target:null,phase:Math.random()*6}}
+for(let i=0;i<4;i++)survivors.push(makeSurvivor(i));
+function spawnItem(kind,x,z){const mesh=new THREE.Mesh(kind==='paper'?new THREE.BoxGeometry(.35,.035,.28):new THREE.CylinderGeometry(.24,.24,.13,16),kind==='paper'?paperMat:oreoMat);mesh.position.set(x,.15,z);mesh.rotation.x=kind==='oreo'?Math.PI/2:0;mesh.castShadow=true;scene.add(mesh);items.push({kind,mesh})}
+for(let i=0;i<38;i++)spawnItem(Math.random()<.7?'paper':'oreo',Math.random()*56-28,Math.random()*56-28);
+function loadTeacher(key){loader.load(assets[key],g=>{const root=g.scene;root.scale.setScalar(key==='circle'?1.15:1);root.position.set(key==='circle'?0:-12,0,key==='circle'?-15:-12);scene.add(root);teachers.push({key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,ray:new THREE.Raycaster(),stuck:0,previous:root.position.clone()});if(g.animations.length){const m=teachers[teachers.length-1].mixer;const clip=g.animations.find(a=>/walk|run/i.test(a.name))||g.animations[0];m.clipAction(clip).play()}},undefined,e=>console.warn('Teacher model failed',key,e))}
+loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
+const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE')attack()});addEventListener('keyup',e=>keys[e.code]=false);
+let locked=false;renderer.domElement.addEventListener('click',()=>{if(started)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
+document.addEventListener('mousemove',e=>{if(!locked||!started)return;player.yaw-=e.movementX*.0022;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.35,Math.min(1.35,player.pitch));camera.rotation.set(player.pitch,player.yaw,0)});
+function attack(){if(!started||dead||elapsed-lastAttack<1)return;lastAttack=elapsed;for(const t of teachers){if(t.root.position.distanceTo(player.pos)<3.2){t.attackAt=elapsed+2.2;t.root.userData.stagger=elapsed+1.4}}}
+function collides(pos){const p=new THREE.Box3(new THREE.Vector3(pos.x-.38,.05,pos.z-.38),new THREE.Vector3(pos.x+.38,1.8,pos.z+.38));return obstacles.some(b=>b.intersectsBox(p))}
+const raycaster=new THREE.Raycaster();
+function stepTeacher(t,dt){const p=t.root.position;if(elapsed<(t.root.userData.stagger||0))return;
+let target=player.pos,nearest=player.pos.distanceTo(p);for(const s of survivors)if(!s.dead){let d=s.root.position.distanceTo(p);if(d<nearest){nearest=d;target=s.root.position}}
+if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
+const dir=target.clone().sub(p).setY(0);if(dir.length()<.01)return;dir.normalize();
+const origin=p.clone().add(new THREE.Vector3(0,.9,0));t.ray.set(origin,dir);t.ray.far=2.4;const hit=t.ray.intersectObjects(scene.children,true).find(h=>h.object!==t.root&&!t.root.children.includes(h.object)&&h.object.userData.teacher!==true&&h.object.position.y<3);
+let move=dir;if(hit){const side=new THREE.Vector3(-dir.z,0,dir.x);const opts=[side,side.clone().negate(),dir.clone().negate()];move=opts.find(v=>{t.ray.set(origin,v);t.ray.far=2.3;return !t.ray.intersectObjects(obstaclesMeshes(),false).length})||side}
+const speed=t.speed*(nearest<2?0.15:1);const next=p.clone().add(move.multiplyScalar(speed*dt));if(!collides(next))p.copy(next);else{const sidestep=new THREE.Vector3(-dir.z,0,dir.x);for(const sign of [1,-1]){const q=p.clone().add(sidestep.clone().multiplyScalar(sign*speed*dt));if(!collides(q)){p.copy(q);break}}}
+t.root.rotation.y=Math.atan2(move.x,move.z);
+if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-12);if(hp===0){dead=true;document.querySelector('#msg').textContent='YOU WERE CAUGHT — press NEW GAME'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=20;if(s.hp<=0){s.dead=true;s.respawn=elapsed+12;s.root.visible=false}}}}
 }
-function teacherAnim(t,kind){
- if(!t.mixer)return;
- const keys=Object.keys(t.acts),patterns=kind==='attack'?['attack','attacking','hit','slash']:kind==='run'?['run','sprint','running']:kind==='walk'?['walk','walking','move']:['idle','stand','breath'];
- let clip=keys.find(k=>patterns.some(p=>k.includes(p)))||keys[0];if(!clip)return;
- const a=t.acts[clip];if(t.active===clip&&a.isRunning())return;Object.values(t.acts).forEach(x=>x.stop());a.reset().fadeIn(.2).play();t.active=clip;
-}
-loadTeacher('Miss Thavel','fundamental_paper_education_-_miss_thavel.glb',-14,12);
-loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-12);
-// Local teacher locomotion: probe downward for walkable floor and forward for obstacles.
-function teacherGroundClear(x,z){
- const down=new THREE.Raycaster(new THREE.Vector3(x,5,z),new THREE.Vector3(0,-1,0),0,8);
- const hits=down.intersectObjects(floorMeshes,false);
- return hits.some(h=>h.object.visible&&h.face&&h.face.normal.y>.45&&h.point.y>=-.35&&h.point.y<=.25);
-}
-let showTeacherRayGizmos=false;const teacherRayViz=new THREE.Group();scene.add(teacherRayViz);
-let teacherRayGizmoLast=0;
-function updateTeacherRayGizmos(){
- if(!showTeacherRayGizmos){teacherRayViz.visible=false;return}
- teacherRayViz.visible=true;
- const now=performance.now();if(now-teacherRayGizmoLast<120)return;teacherRayGizmoLast=now;
- for(const o of [...teacherRayViz.children]){teacherRayViz.remove(o);o.geometry?.dispose();o.material?.dispose()}
- const positions=[],colors=[];
- const add=(a,b,color)=>{positions.push(a.x,a.y,a.z,b.x,b.y,b.z);colors.push(color.r,color.g,color.b,color.r,color.g,color.b)};
- for(const t of teachers){if(!t.root)continue;const p=t.root.position;
- // Miss Circle uses the same ray-anchor bridge AI; render her 16 rays too.
- if(circle){
-  const agent=ensureCircleRayAgent(),p= circle.position;
-  for(const cell of agent.rayAnchors){
-   const anchor=new THREE.Vector3(cell.pos.x,.9,cell.pos.z),origin=new THREE.Vector3(p.x,.9,p.z),delta=anchor.clone().sub(origin),distance=delta.length();
-   if(distance<.01)continue;raycaster.set(origin,delta.normalize());raycaster.far=distance;
-   const hit=raycaster.intersectObjects(wallMeshes,false)[0],end=hit?hit.point:anchor;
-   const ground=teacherGroundClear(cell.pos.x,cell.pos.z);
-   add(new THREE.Vector3(p.x,.12,p.z),new THREE.Vector3(end.x,.12,end.z),hit?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
-  }
- }
-  // Each ray owns a persistent world-space anchor. It releases and re-seeds
-  // independently once its teacher has moved 9.5 units away.
-  if(!t.rayAnchors)t.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(p.x+Math.sin(i*Math.PI*2/16)*4,0,p.z+Math.cos(i*Math.PI*2/16)*4)}));
-  for(const cell of t.rayAnchors){
-   if(Math.hypot(cell.pos.x-p.x,cell.pos.z-p.z)>9.5){
-    cell.angle=Math.random()*Math.PI*2;const radius=3+Math.random()*5.5;
-    cell.pos.set(p.x+Math.sin(cell.angle)*radius,0,p.z+Math.cos(cell.angle)*radius);
-   }
-   const anchor=new THREE.Vector3(cell.pos.x,.9,cell.pos.z),origin=new THREE.Vector3(p.x,.9,p.z),delta=anchor.clone().sub(origin),distance=delta.length();
-   if(distance<.01)continue;const dir=delta.normalize();raycaster.set(origin,dir);raycaster.far=distance;
-   const hit=raycaster.intersectObjects(wallMeshes,false)[0],end=hit?hit.point:anchor;
-   const ground=teacherGroundClear(end.x,end.z),color=hit?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33);
-   add(new THREE.Vector3(p.x,.12,p.z),new THREE.Vector3(end.x,.12,end.z),color);
-   if(!hit)add(new THREE.Vector3(end.x,.12,end.z),new THREE.Vector3(end.x,-.35,end.z),ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
-  }
- }
- if(positions.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));teacherRayViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));}
-}
-function teacherRayStep(t,target,speed,dt){
- const p=t.root.position,distTarget=Math.hypot(target.x-p.x,target.z-p.z);if(distTarget<1.6)return false;
- if(!t.rayAnchors)t.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(p.x+Math.sin(i*Math.PI*2/16)*4,0,p.z+Math.cos(i*Math.PI*2/16)*4)}));
- let best=null,bestScore=Infinity;
- for(const cell of t.rayAnchors){let dx=cell.pos.x-p.x,dz=cell.pos.z-p.z,length=Math.hypot(dx,dz);
-  if(length>9.5||length<1.1){cell.angle=Math.random()*Math.PI*2;const r=3+Math.random()*5.5;cell.pos.set(p.x+Math.sin(cell.angle)*r,0,p.z+Math.cos(cell.angle)*r);dx=cell.pos.x-p.x;dz=cell.pos.z-p.z;length=Math.hypot(dx,dz)}
-  if(length<.1)continue;const dir=new THREE.Vector3(dx/length,0,dz/length);raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=length;const hit=raycaster.intersectObjects(wallMeshes,false)[0];
-  if(hit&&hit.distance<length-.08){cell.angle=Math.random()*Math.PI*2;const r=3+Math.random()*5.5;cell.pos.set(p.x+Math.sin(cell.angle)*r,0,p.z+Math.cos(cell.angle)*r);continue}
-  if(!teacherGroundClear(cell.pos.x,cell.pos.z)){cell.angle=Math.random()*Math.PI*2;const r=2.5+Math.random()*5;cell.pos.set(p.x+Math.sin(cell.angle)*r,0,p.z+Math.cos(cell.angle)*r);continue}
-  const step=Math.min(speed*dt,length),nx=p.x+dir.x*step,nz=p.z+dir.z*step;if(!teacherGroundClear(nx,nz))continue;const score=Math.hypot(target.x-nx,target.z-nz)+length*.025;if(score<bestScore){bestScore=score;best={dir,step}}
- }
- if(!best){for(let k=0;k<16;k++){const angle=k*Math.PI/8,dir=new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)),step=Math.min(speed*dt,1.35);raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=step;const hit=raycaster.intersectObjects(wallMeshes,false)[0],nx=p.x+dir.x*step,nz=p.z+dir.z*step;if((!hit||hit.distance>step-.12)&&teacherGroundClear(nx,nz)){best={dir,step};break}}
-  for(const cell of t.rayAnchors){cell.angle=Math.random()*Math.PI*2;const r=2+Math.random()*5;cell.pos.set(p.x+Math.sin(cell.angle)*r,0,p.z+Math.cos(cell.angle)*r)}
- }
- if(!best)return false;p.x+=best.dir.x*best.step;p.z+=best.dir.z*best.step;t.root.rotation.y=Math.atan2(best.dir.x,best.dir.z);return true;
-}
-function updateTeachers(dt){
- for(const t of teachers){if(!t.root)continue;
-  const p=t.root.position,home=t.pos;
-  if(isDay){t.root.userData.waypoint=null;const retreat=home.clone().sub(p).setY(0),rd=retreat.length();if(rd>.15){p.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));t.root.rotation.y=Math.atan2(retreat.x,retreat.z);teacherAnim(t,'walk')}else teacherAnim(t,'idle');continue;}
-  let target=null,stamp=-1,victim=null,isPlayerTarget=false;
-  for(const agent of survivors){if(agent.dead||!agent.root)continue;const moved=agent.movedCellAt||0;if(moved>stamp){stamp=moved;target=agent.root.position;victim=agent;isPlayerTarget=false}}
-  if(!dead&&(playerMovedCellAt||0)>stamp){stamp=playerMovedCellAt||0;target=player.pos;victim=null;isPlayerTarget=true}
-  if(!target){teacherAnim(t,'idle');continue}
-  const d=p.distanceTo(target);
-  if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack');if(isPlayerTarget)teacherHit(t,null,true);else if(victim)teacherHit(t,victim,false)}
-  else if(elapsed<t.attackUntil)teacherAnim(t,'attack');
-  else{const fast=d<=45;teacherRayStep(t,target,fast?5.2:2.8,dt);teacherAnim(t,fast?'run':'walk')}
- }
-}
-
-const items=[],lootChunks=new Set();function openHallLootPoint(x,z){
- // Procedural room tiles are 10-unit cells with BOTH tile indices even.
- const tx=Math.floor(x/10),tz=Math.floor(z/10);
- if(tx%2===0&&tz%2===0)return false;
- const clearance=new THREE.Box3(new THREE.Vector3(x-.38,0,z-.38),new THREE.Vector3(x+.38,.8,z+.38));
- return !walls.some(w=>w.intersectsBox(clearance));
-}
-function lootSpawnInChunk(cx,cz){
- // Pick only open corridor tiles; never place collectibles inside room tiles or walls.
- for(let tries=0;tries<100;tries++){
-  const x=cx*CHUNK+1+Math.random()*(CHUNK-2),z=cz*CHUNK+1+Math.random()*(CHUNK-2);
-  if(openHallLootPoint(x,z))return {x,z};
- }
- // Safe corridor fallback, away from room centers.
- return {x:cx*CHUNK+15,z:cz*CHUNK+5};
-}
-function spawn(kind,x,z){
- if(!openHallLootPoint(x,z)){const p=lootSpawnInChunk(Math.floor(x/CHUNK),Math.floor(z/CHUNK));x=p.x;z=p.z}
- let m=kind==='paper'?new THREE.Mesh(new THREE.BoxGeometry(.45,.05,.6),mat(0xffeaa0)):new THREE.Mesh(new THREE.TorusGeometry(.22,.09,8,16),mat(0x6a3519));m.position.set(x,.35,z);m.rotation.x=kind==='oreo'?Math.PI/2:0;scene.add(m);items.push({kind,mesh:m})
-}
-function closestItem(){let best=null,d=2.3;items.forEach(i=>{let n=i.mesh.position.distanceTo(player.pos);if(n<d){d=n;best=i}});return best}
-function hud(){document.querySelector('#stats').textContent='Papers: '+papers+' · Oreos: '+oreo;document.querySelector('#health').textContent='Health: '+Math.max(0,Math.ceil(playerHp))+' / '+playerMaxHp;document.querySelector('#msg').textContent=dead?'YOU WERE CAUGHT — respawning…':''}
-function damagePlayer(amount){if(dead)return;playerHp=Math.max(0,playerHp-amount);hud();if(playerHp<=0){dead=true;playerRespawnAt=elapsed+4;document.querySelector('#msg').textContent='YOU WERE DEFEATED — respawning…'}}
-function damageSurvivor(a,amount){if(a.dead)return;a.hp=Math.max(0,a.hp-amount);if(a.hp<=0){a.dead=true;a.respawnAt=elapsed+7}}
-function teacherHit(t,target,isPlayer){if(elapsed-(t.lastDamageAt??-999)<3)return;t.lastDamageAt=elapsed;if(isPlayer)damagePlayer(45);else if(target)damageSurvivor(target,45)}
-function fail(){failedAt=player.pos.clone();mode='investigate';lastFail=performance.now();document.querySelector('#status').textContent='TEST FAILED — Miss Circle is investigating!';playAnim('rage')}
-function startTest(){testOpen=true;document.exitPointerLock();let a=1+Math.floor(Math.random()*12),b=1+Math.floor(Math.random()*12);testAnswer=a+b;document.querySelector('#question').textContent='What is '+a+' + '+b+'?';document.querySelector('#answer').value='';document.querySelector('#testModal').style.display='grid';document.querySelector('#answer').focus()}
-function submitTest(){if(!testOpen)return;testOpen=false;document.querySelector('#testModal').style.display='none';if(Number(document.querySelector('#answer').value)===testAnswer)document.querySelector('#status').textContent='Test passed!';else fail();if(started&&!dead)renderer.domElement.requestPointerLock()}
-document.querySelector('#submitTest').onclick=submitTest;document.querySelector('#answer').onkeydown=e=>{if(e.key==='Enter')submitTest()};
-function throwOreo(){if(!oreo)return;oreo--;let p=player.pos.clone().add(new THREE.Vector3(Math.sin(player.yaw)*5,0,-Math.cos(player.yaw)*5));throwTarget=p;mode='oreo';hud()}
-document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR'){showTeacherRayGizmos=!showTeacherRayGizmos;updateTeacherRayGizmos();}if(e.code==='KeyG'){showBridgeGizmos=!showBridgeGizmos;if(showBridgeGizmos){if(navNodes.size===0&&circle)rebuildNav(circle.position);drawBridgeGizmos();}else drawBridgeGizmos();}if(e.code==='KeyE'&&started&&!dead&&!testOpen){let it=closestItem();if(it){scene.remove(it.mesh);items.splice(items.indexOf(it),1);if(it.kind==='paper'){papers++;hud();startTest()}else{oreo++;document.querySelector('#status').textContent='Oreo collected. Q to throw!';hud()}}}if(e.code==='KeyQ'&&!testOpen)throwOreo()});document.addEventListener('keyup',e=>keys[e.code]=false);
-document.addEventListener('click',()=>{if(started&&document.pointerLockElement!==renderer.domElement)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
-document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
-document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();initializeWorldLighting();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
-const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;
-function applyDayNight(){
- const cycleLength=DAY_DURATION+NIGHT_DURATION;
- dayPhase=((dayPhase%cycleLength)+cycleLength)%cycleLength;
- isDay=dayPhase<DAY_DURATION;
- // Blend over the final/initial seconds of each phase; never snap global lighting.
- let blend=0;
- if(dayPhase>=DAY_DURATION-TRANSITION_SECONDS&&dayPhase<DAY_DURATION+TRANSITION_SECONDS){
-  blend=(dayPhase-(DAY_DURATION-TRANSITION_SECONDS))/(TRANSITION_SECONDS*2);
- }else if(dayPhase>=cycleLength-TRANSITION_SECONDS){
-  blend=1-(dayPhase-(cycleLength-TRANSITION_SECONDS))/(TRANSITION_SECONDS*2);
- }else if(dayPhase<TRANSITION_SECONDS){
-  blend=.5-dayPhase/(TRANSITION_SECONDS*2);
- }
- nightBlend=THREE.MathUtils.smoothstep(blend,0,1);
- cycleSky.copy(daySky).lerp(nightSky,nightBlend);
- // Keep chase tint out of global scene/fog: global red fog can obscure the
- // entire school and make interior geometry appear to vanish.
- scene.background.copy(cycleSky);
- scene.fog.color.copy(cycleSky);
- // Chase changes lighting only modestly; preserve visibility at both day/night.
- hemi.intensity=THREE.MathUtils.lerp(ambientNormal,1.15,nightBlend)*(chaseVisual?.9:1);
- sun.intensity=THREE.MathUtils.lerp(sunNormal,.35,nightBlend)*(chaseVisual?.75:1);
- sun.position.set(15,THREE.MathUtils.lerp(30,12,nightBlend),10);
- // Interior fixtures stay on through the entire exterior cycle.
- ceilingLights.forEach(l=>{l.lamp.visible=true;l.glow.visible=true});
-}
-function initializeWorldLighting(){
- // Reinitialize cycle state cleanly on every NEW GAME, without touching world objects.
- dayPhase=0;isDay=true;nightBlend=0;cycleSky.copy(daySky);
- scene.background.copy(daySky);scene.fog.color.copy(daySky);
- applyDayNight();
-}
-function update(dt){if(!started||testOpen)return;elapsed+=dt;dayPhase=(dayPhase+dt)%(DAY_DURATION+NIGHT_DURATION);applyDayNight();if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
-// Seed collectibles in every newly generated chunk, including chunks created while exploring.
-for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
-if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastPaper=elapsed}if(elapsed-lastOreo>9+Math.random()*10){spawn('oreo',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastOreo=elapsed}
-if(!dead){let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=keys.ShiftLeft?8:5;let dir=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(dir.length()){playerMovedCellAt=elapsed;dir.normalize().multiplyScalar(speed*dt);}
-let next=player.pos.clone().add(dir);let box=new THREE.Box3(new THREE.Vector3(next.x-.35,0,next.z-.35),new THREE.Vector3(next.x+.35,1.8,next.z+.35));player.pos.copy(next);ensureChunksAround(player.pos); // Player intentionally ghosts through walls
-camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);}
-const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/navCell));if(pCell!==lastPlayerCell){lastPlayerCell=pCell;playerMovedCellAt=elapsed;}
-updateSurvivors(dt);
-if(circle){
- if(isDay){mode='calm';scheduledHuntTarget=null;circlePatrolPoint=null;const retreat=circleHome.clone().sub(circle.position).setY(0),rd=retreat.length();if(rd>.15){circle.position.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));playAnim('walk')}else playAnim('idle');setChaseVisual(false);return;}
- ensureChunksAround(circle.position);const cp=circle.position;
- // Every 11 seconds, select whoever moved most recently (player OR any survivor).
- // Hold the selected target for a full 11 seconds, regardless of respawn.
- if(!scheduledHuntTarget||elapsed>=huntSwitchAt){
-  huntSwitchAt=elapsed+1.5;let newest=-1,pick=null;
-  for(const agent of survivors){if(agent.dead||!agent.root)continue;const moved=agent.movedCellAt||0;if(moved>newest){newest=moved;pick={pos:agent.root.position,agent,isPlayer:false,stamp:moved}}}
-  if(!dead&&(playerMovedCellAt||0)>newest)pick={pos:player.pos,agent:null,isPlayer:true,stamp:playerMovedCellAt||0};
-  scheduledHuntTarget=pick;
- }
- // Enforce detection distance continuously, not only during target rotation.
- if(scheduledHuntTarget&&(scheduledHuntTarget.isPlayer?dead:scheduledHuntTarget.agent?.dead)){
-  scheduledHuntTarget=null;huntSwitchAt=elapsed;
- }
- if(scheduledHuntTarget){
-  const livePos=scheduledHuntTarget.isPlayer?player.pos:scheduledHuntTarget.agent.root.position;
-  
- }
- const target=scheduledHuntTarget;
- setChaseVisual(mode==='chase');
- if(mode==='investigate'&&failedAt){if(cp.distanceTo(failedAt)>1.8){moveCircleToward(failedAt,3.5,dt);playAnim('walk')}else{mode='calm';failedAt=null;playAnim('idle')}}
- else if(mode==='oreo'&&throwTarget){if(cp.distanceTo(throwTarget)>1.5){moveCircleToward(throwTarget,3.5,dt);playAnim('walk')}else{mode='calm';throwTarget=null;playAnim('idle')}}
- else if(target){
-  circle.userData.huntTarget=target.agent;
-  const attackDistance=1.65,distToTarget=cp.distanceTo(target.pos);
-  if(distToTarget<=attackDistance){
-   // Lock in place during the attack; animation won't restart every frame.
-   circlePatrolPoint=null;mode='chase';
-   circle.userData.attackUntil=elapsed+0.85;
-   playAnim('attack');
-   // One hit per 3 seconds, with a clear cooldown independent of animation.
-   if(elapsed-(circle.userData.lastDamageAt??-999)>=3){
-    circle.userData.lastDamageAt=elapsed;
-    if(target.isPlayer)damagePlayer(45);else damageSurvivor(target.agent,45);
-   }
-  }else if(elapsed<(circle.userData.attackUntil||0)){
-   mode='chase';playAnim('attack');
-  }else{
-   mode='chase';
-   const targetStalled=elapsed-(target.isPlayer?(playerMovedCellAt||0):(target.agent?.movedCellAt||0))>=3;
-   if(targetStalled)moveCircleStraightToward(target.pos,distToTarget<=45?5.2:2.8,dt);
-   else moveCircleToward(target.pos,distToTarget<=45?5.2:2.8,dt);
-   playAnim(distToTarget<=45?'run':'walk');
-  }
- }else{
-  // If nobody is currently selected, patrol toward nearby movers whose path
-  // crosses the cell Miss Circle is standing on (or an adjacent cell).
-  const movers=[];
-  // Long-range patrol may follow recent movement anywhere in the streamed school;
-  // this is walking/patrolling, never a chase. Refresh the destination every 11s.
-  if(!dead&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
-  for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
-  const currentCell=cp;
-  // Detect anyone occupying Miss Circle's exact grid cell, even if they
-  // stopped moving; then patrol to that cell. Player and survivors both count.
-  const occupants=[];
-  if(!dead&&Math.round(player.pos.x/navCell)===Math.round(cp.x/navCell)&&Math.round(player.pos.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:player.pos,stamp:playerMovedCellAt||0});
-  for(const a of survivors)if(!a.dead&&Math.round(a.root.position.x/navCell)===Math.round(cp.x/navCell)&&Math.round(a.root.position.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:a.root.position,stamp:a.movedCellAt||0});
-  const crossing=movers.sort((a,b)=>b.stamp-a.stamp)[0];
-  const patrolTarget=occupants[0]||crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
-  circle.userData.huntTarget=null;
-  if(patrolTarget){mode='patrol';circlePatrolPoint=null;moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}
-  else{
-   // Keep patrolling even when nobody is moving nearby: choose a reachable
-   // ray-bridge neighbor and continue roaming instead of standing idle.
-   mode='patrol';circle.userData.huntTarget=null;
-   if(!circlePatrolPoint||cp.distanceTo(circlePatrolPoint)<1.1||!clearBridge(cp,circlePatrolPoint)){
-    const here=nearestNode(cp),options=here?here.links.filter(n=>clearBridge(cp,n.p)): [];
-    circlePatrolPoint=options.length?options[Math.floor(Math.random()*options.length)].p.clone():null;
-   }
-   if(circlePatrolPoint){moveCircleToward(circlePatrolPoint,2.8,dt);playAnim('walk')}
-   else playAnim('idle');
-  }
- }
-}
-}
-function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.05);if(mixer)mixer.update(dt);teachers.forEach(t=>t.mixer?.update(dt));update(dt);updateTeachers(dt);updateTeacherRayGizmos();renderer.render(scene,camera)}loop();
-// Keep the startup overlay from trapping the player if pointer-lock is denied by browser policy.
-document.addEventListener('pointerlockerror',()=>{if(started)document.querySelector('#status').textContent='Mouse lock blocked — click the game to enable mouse look. WASD still moves.';});
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function obstaclesMeshes(){return scene.children.filter(o=>o.isMesh&&obstacles.some(b=>b.intersectsBox(new THREE.Box3().setFromObject(o))))}
+function update(dt){if(!started)return;elapsed+=dt;phaseTime=(phaseTime+dt)%(DAY+NIGHT);const blend=phaseTime<DAY?0:1;let trans=0;if(phaseTime<TRANS)trans=.5-phaseTime/(TRANS*2);else if(phaseTime>DAY-TRANS&&phaseTime<DAY+TRANS)trans=(phaseTime-(DAY-TRANS))/(TRANS*2);else if(phaseTime>DAY+NIGHT-TRANS)trans=1-(phaseTime-(DAY+NIGHT-TRANS))/(TRANS*2);nightMix=THREE.MathUtils.smoothstep(trans,0,1);sky.copy(daySky).lerp(nightSky,nightMix);scene.background.copy(sky);hemi.intensity=THREE.MathUtils.lerp(1.9,.85,nightMix);sun.intensity=THREE.MathUtils.lerp(2.1,.25,nightMix);sun.position.y=THREE.MathUtils.lerp(32,12,nightMix);lights.forEach(l=>{l.fixture.visible=true;l.lamp.visible=true});
+if(!dead){const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0);const d=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(d.length())d.normalize().multiplyScalar((keys.ShiftLeft?8:5)*dt);const next=player.pos.clone().add(d);if(!collides(next))player.pos.copy(next);camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.set(player.pitch,player.yaw,0)}
+for(const t of teachers){t.mixer?.update(dt);stepTeacher(t,dt)}
+for(const s of survivors){if(s.dead){if(elapsed>s.respawn){s.dead=false;s.hp=100;s.root.visible=true;s.root.position.set(Math.random()*12-6,0,Math.random()*12+8)}continue}let target=items[0];if(target){const delta=target.mesh.position.clone().sub(s.root.position).setY(0);if(delta.length()<.65){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;target=null}if(target){delta.normalize().multiplyScalar(2.2*dt);const q=s.root.position.clone().add(delta);if(!collides(q))s.root.position.copy(q)}}s.phase+=dt*5;s.root.position.y=Math.abs(Math.sin(s.phase))*.035}
+for(const it of items){it.mesh.rotation.y+=dt*.7}
+document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0')}
+document.querySelector('#play').onclick=()=>{started=true;document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock();phaseTime=0;nightMix=0;scene.background.copy(daySky);hp=100;dead=false;player.pos.set(0,0,0);player.yaw=0;player.pitch=0};
+const clock=new THREE.Clock();function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera)}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script></body></html>

@@ -199,6 +199,27 @@ function teacherAnim(t,kind){
 }
 loadTeacher('Miss Thavel','fundamental_paper_education_-_miss_thavel.glb',-14,12);
 loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-12);
+// Local teacher locomotion: probe downward for walkable floor and forward for obstacles.
+function teacherGroundClear(x,z){
+ const down=new THREE.Raycaster(new THREE.Vector3(x,5,z),new THREE.Vector3(0,-1,0),0,8);
+ const hits=down.intersectObjects(scene.children,true);
+ return hits.some(h=>h.object.visible&&h.face&&h.face.normal.y>.45&&h.point.y>=-.35&&h.point.y<=.25);
+}
+function teacherRayStep(t,target,speed,dt){
+ const p=t.root.position,dx=target.x-p.x,dz=target.z-p.z,d=Math.hypot(dx,dz);if(d<1.6)return false;
+ const desired=Math.atan2(dx,dz),step=Math.min(speed*dt,d-1.25);let best=null,bestScore=Infinity;
+ for(let i=0;i<24;i++){
+  const angle=i*Math.PI*2/24,dir=new THREE.Vector3(Math.sin(angle),0,Math.cos(angle));
+  const start=new THREE.Vector3(p.x,.9,p.z);raycaster.set(start,dir);raycaster.far=Math.max(1.2,step+0.9);
+  const obstacle=raycaster.intersectObjects(wallMeshes,false).length>0;
+  const gx=p.x+dir.x*step,gz=p.z+dir.z*step;
+  if(obstacle||!teacherGroundClear(gx,gz))continue;
+  const delta=Math.atan2(Math.sin(angle-desired),Math.cos(angle-desired)),score=Math.abs(delta);
+  if(score<bestScore){bestScore=score;best=dir}
+ }
+ if(!best)return false;
+ p.x+=best.x*step;p.z+=best.z*step;t.root.rotation.y=Math.atan2(best.x,best.z);return true;
+}
 function updateTeachers(dt){
  for(const t of teachers){if(!t.root)continue;
   const p=t.root.position,home=t.pos;
@@ -210,7 +231,7 @@ function updateTeachers(dt){
   const d=p.distanceTo(target);
   if(d<1.6){t.attackUntil=elapsed+1.1;t.root.userData.waypoint=null;teacherAnim(t,'attack');if(isPlayerTarget)teacherHit(t,null,true);else if(victim)teacherHit(t,victim,false)}
   else if(elapsed<t.attackUntil)teacherAnim(t,'attack');
-  else{const fast=d<=45;if(elapsed-stamp>=3){const delta=target.clone().sub(p).setY(0),len=delta.length();if(len>1e-4){const step=delta.normalize().multiplyScalar(Math.min((fast?5.2:2.8)*dt,len));p.add(step);t.root.rotation.y=Math.atan2(step.x,step.z)}}else steerAgent(t.root,target,fast?5.2:2.8,dt);teacherAnim(t,fast?'run':'walk')}
+  else{const fast=d<=45;teacherRayStep(t,target,fast?5.2:2.8,dt);teacherAnim(t,fast?'run':'walk')}
  }
 }
 

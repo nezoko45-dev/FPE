@@ -313,7 +313,9 @@ function applyDayNight(){
  if(dayPhase>=DAY_DURATION-TRANSITION_SECONDS&&dayPhase<DAY_DURATION+TRANSITION_SECONDS){
   blend=(dayPhase-(DAY_DURATION-TRANSITION_SECONDS))/(TRANSITION_SECONDS*2);
  }else if(dayPhase>=cycleLength-TRANSITION_SECONDS){
-  blend=(dayPhase-(cycleLength-TRANSITION_SECONDS)+TRANSITION_SECONDS)/(TRANSITION_SECONDS*2);
+  blend=1-(dayPhase-(cycleLength-TRANSITION_SECONDS))/(TRANSITION_SECONDS*2);
+ }else if(dayPhase<TRANSITION_SECONDS){
+  blend=.5-dayPhase/(TRANSITION_SECONDS*2);
  }
  nightBlend=THREE.MathUtils.smoothstep(blend,0,1);
  cycleSky.copy(daySky).lerp(nightSky,nightBlend);

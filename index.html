@@ -316,7 +316,7 @@ camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.order='YXZ';
 const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/navCell));if(pCell!==lastPlayerCell){lastPlayerCell=pCell;playerMovedCellAt=elapsed;}
 updateSurvivors(dt);
 if(circle){
- if(isDay){mode='calm';scheduledHuntTarget=null;circleWaypoint=null;circlePatrolPoint=null;const retreat=circleHome.clone().sub(circle.position).setY(0),rd=retreat.length();if(rd>.15){circle.position.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));playAnim('walk')}else playAnim('idle');setChaseVisual(false);return;}
+ if(isDay){mode='calm';scheduledHuntTarget=null;circlePatrolPoint=null;const retreat=circleHome.clone().sub(circle.position).setY(0),rd=retreat.length();if(rd>.15){circle.position.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));playAnim('walk')}else playAnim('idle');setChaseVisual(false);return;}
  ensureChunksAround(circle.position);const cp=circle.position;
  // Every 11 seconds, select whoever moved most recently (player OR any survivor).
  // Hold the selected target for a full 11 seconds, regardless of respawn.
@@ -343,7 +343,7 @@ if(circle){
   const attackDistance=1.65,distToTarget=cp.distanceTo(target.pos);
   if(distToTarget<=attackDistance){
    // Lock in place during the attack; animation won't restart every frame.
-   circleWaypoint=null;circlePatrolPoint=null;mode='chase';
+   circlePatrolPoint=null;mode='chase';
    circle.userData.attackUntil=elapsed+0.85;
    playAnim('attack');
    // One hit per 3 seconds, with a clear cooldown independent of animation.

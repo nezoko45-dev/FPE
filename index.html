@@ -60,12 +60,12 @@ function navStep(pos,target,dt,speed,ray){const dir=target.clone().sub(pos).setY
 const raycaster=new THREE.Raycaster();
 function stepTeacher(t,dt){
  const p=t.root.position;
- if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){navStep(p,t.home,dt,t.speed,t.ray);t.root.rotation.y=Math.atan2(home.x,home.z);if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){navStep(p,t.home,dt,t.speed,t.ray);t.rayAnchors=[];t.root.rotation.y=Math.atan2(home.x,home.z);if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
  if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
  const origin=p.clone().add(new THREE.Vector3(0,.9,0)),near=nearbyRayMeshes(p,12);
- // Directional steering is local to the moving teacher; persistent world anchors never pull it back.
+ // Directional steering is local; ray endpoints reseed around the teacher after each movement.
  const force=new THREE.Vector3(),toTarget=target.clone().sub(p).setY(0),targetDir=toTarget.lengthSq()>.01?toTarget.normalize():new THREE.Vector3();
  let bestClear=null,bestScore=-Infinity;
  for(let i=0;i<16;i++){
@@ -81,7 +81,7 @@ function stepTeacher(t,dt){
  if(force.lengthSq()<.025){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  const chosen=force.normalize();t.moveDir.copy(chosen);
  const speed=t.speed*(nearest<1.7?.12:1),move=chosen.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));
- if(!collides(next))p.copy(next);else t.moveDir.multiplyScalar(.15);
+ if(!collides(next)){p.copy(next);t.rayAnchors=[]}else t.moveDir.multiplyScalar(.15);
  const yaw=Math.atan2(move.x,move.z);t.root.rotation.y+=Math.atan2(Math.sin(yaw-t.root.rotation.y),Math.cos(yaw-t.root.rotation.y))*Math.min(1,dt*7);
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
  if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
@@ -92,7 +92,7 @@ const rayDirs=Array.from({length:8},(_,i)=>new THREE.Vector3(Math.cos(i*Math.PI/
 function updateTeacherGizmos(t){
  if(!t.gizmos)return;t.gizmos.forEach(g=>g.visible=showRayGizmos);
  const p=t.root.position,origin=p.clone().add(new THREE.Vector3(0,.9,0)),rayTargets=obstaclesMeshes();
- // 360-degree ground anchors: retain each point while it stays within 6 units; release/reseed only after leaving that radius.
+ // Rays are unanchored: reseed their ground endpoints around the teacher after every movement.
  if(!t.rayAnchors)t.rayAnchors=[];
  for(let i=0;i<8;i++){
   const heading=t.root.rotation.y+i*Math.PI*2/8,raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;

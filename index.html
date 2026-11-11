@@ -15,7 +15,7 @@ const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
 const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);const ambientNormal=2, sunNormal=2.3;let dayPhase=0;const DAY_DURATION=150,NIGHT_DURATION=480;let isDay=true;const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323);function setChaseLighting(on){hemi.intensity=on?.75:(isDay?ambientNormal:.45);sun.intensity=on?.35:(isDay?sunNormal:.18);}
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const floorMat=mat(0xaaa7a0),wallMat=mat(0xd8d4c9),trimMat=mat(0x625c5a);
-function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
+const floorMeshes=[];function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(m===floorMat)floorMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],wallMeshes=[],schoolRoofs=[],chunks=new Map(),CHUNK=20;let navDirty=true;
 const clutterMat=mat(0x6f4b32),paperMat=mat(0xf2ead2),roofMat=mat(0x777b83);
 const ceilingLights=[];const ceilingLightMat=new THREE.MeshStandardMaterial({color:0xfff1c2,emissive:0xffd66b,emissiveIntensity:1.8});
@@ -202,23 +202,26 @@ loadTeacher('Miss Bloomie','fundamental_paper_education_-_miss_bloomie.glb',14,-
 // Local teacher locomotion: probe downward for walkable floor and forward for obstacles.
 function teacherGroundClear(x,z){
  const down=new THREE.Raycaster(new THREE.Vector3(x,5,z),new THREE.Vector3(0,-1,0),0,8);
- const hits=down.intersectObjects(scene.children,true);
+ const hits=down.intersectObjects(floorMeshes,false);
  return hits.some(h=>h.object.visible&&h.face&&h.face.normal.y>.45&&h.point.y>=-.35&&h.point.y<=.25);
 }
 let showTeacherRayGizmos=false;const teacherRayViz=new THREE.Group();scene.add(teacherRayViz);
+let teacherRayGizmoLast=0;
 function updateTeacherRayGizmos(){
+ if(!showTeacherRayGizmos){teacherRayViz.visible=false;return}
+ teacherRayViz.visible=true;
+ const now=performance.now();if(now-teacherRayGizmoLast<120)return;teacherRayGizmoLast=now;
  for(const o of [...teacherRayViz.children]){teacherRayViz.remove(o);o.geometry?.dispose();o.material?.dispose()}
- if(!showTeacherRayGizmos)return;
  const positions=[],colors=[];
  const add=(a,b,color)=>{positions.push(a.x,a.y,a.z,b.x,b.y,b.z);colors.push(color.r,color.g,color.b,color.r,color.g,color.b)};
  for(const t of teachers){if(!t.root)continue;const p=t.root.position;
-  for(let i=0;i<24;i++){const angle=i*Math.PI*2/24,dir=new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)),len=2.8;
+  for(let i=0;i<16;i++){const angle=i*Math.PI*2/16,dir=new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)),len=2.8;
    raycaster.set(new THREE.Vector3(p.x,.9,p.z),dir);raycaster.far=len;
-   const blocked=raycaster.intersectObjects(wallMeshes,false).length>0;
-   const gx=p.x+dir.x*len,gz=p.z+dir.z*len,ground=teacherGroundClear(gx,gz);
-   const color=blocked?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33);
+   const hit=raycaster.intersectObjects(wallMeshes,false)[0],rayEnd=hit?hit.point:new THREE.Vector3(p.x+dir.x*len,.9,p.z+dir.z*len);
+   const gx=rayEnd.x,gz=rayEnd.z,ground=teacherGroundClear(gx,gz);
+   const color=hit?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33);
    add(new THREE.Vector3(p.x,.12,p.z),new THREE.Vector3(gx,.12,gz),color);
-   add(new THREE.Vector3(gx,.12,gz),new THREE.Vector3(gx,-.35,gz),ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
+   if(!hit)add(new THREE.Vector3(gx,.12,gz),new THREE.Vector3(gx,-.35,gz),ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
   }
  }
  if(positions.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));teacherRayViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));}

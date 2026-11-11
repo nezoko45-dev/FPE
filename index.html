@@ -75,11 +75,11 @@ function stepTeacher(t,dt){
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
    t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);
   }
-  const anchor=t.rayAnchors[i],direction=anchor.clone().sub(p).setY(0).normalize();
+  const raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos,direction=anchor?anchor.clone().sub(p).setY(0).normalize():new THREE.Vector3();
   if(direction.lengthSq()<.01)continue;
   t.ray.set(origin,direction);t.ray.far=Math.min(6,anchor.distanceTo(p));
   const hit=t.ray.intersectObjects(near,false)[0];if(hit&&hit.distance<t.ray.far-.15)continue;
-  const score=target.distanceTo(anchor);if(score<scoreBest){scoreBest=score;chosen=direction}
+  const score=anchor?target.distanceTo(anchor):Infinity;if(score<scoreBest){scoreBest=score;chosen=direction}
  }
  if(!chosen){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  t.moveDir.copy(chosen); // all-around rays refresh every frame; movement is never anchor-bound.
@@ -98,7 +98,7 @@ function updateTeacherGizmos(t){
  // 360-degree ground anchors: retain each point while it stays within 6 units; release/reseed only after leaving that radius.
  if(!t.rayAnchors)t.rayAnchors=[];
  for(let i=0;i<8;i++){
-  const heading=t.root.rotation.y+i*Math.PI*2/8,anchor=t.rayAnchors[i];
+  const heading=t.root.rotation.y+i*Math.PI*2/8,raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;
   if(!anchor||anchor.distanceTo(p)>6){
    const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];

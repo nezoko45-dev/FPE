@@ -89,11 +89,13 @@ function updateTeacherGizmos(t){
  if(!t.gizmos)return;
  t.gizmos.forEach(g=>g.visible=showRayGizmos);
  const p=t.root.position,origin=p.clone().add(new THREE.Vector3(0,.9,0)),rayTargets=obstaclesMeshes();
- // Each ray has its own ground anchor and its own 9.8-unit reseed distance.
- if(!t.rayAnchors)t.rayAnchors=Array.from({length:8},()=>({pos:new THREE.Vector3(),seedAt:p.clone(),angle:0}));
+ if(!t.rayAnchors)t.rayAnchors=Array.from({length:8},()=>({pos:new THREE.Vector3(),seedAt:p.clone(),angle:0,releaseAt:0}));
  for(let i=0;i<8;i++){
   const anchor=t.rayAnchors[i];
-  if(!anchor.seedAt||p.distanceTo(anchor.seedAt)>=9.8){
+  // Release each anchor after the teacher moves 9.8 units from its own seed.
+  if(anchor.seedAt&&p.distanceTo(anchor.seedAt)>=9.8){anchor.seedAt=null;anchor.releaseAt=elapsed;}
+  // Released rays visibly drop out, then reseed independently in front on the next frame.
+  if(!anchor.seedAt){
    anchor.seedAt=p.clone();
    const offset=(i/7-.5)*Math.PI*.88,heading=t.root.rotation.y+offset,radius=4.2+(i%3)*1.45;
    anchor.angle=heading;

@@ -70,7 +70,8 @@ function stepTeacher(t,dt){
  let chosen=null,scoreBest=Infinity;
  for(let i=0;i<8;i++){
   const heading=t.root.rotation.y+i*Math.PI*2/8;
-  if(!t.rayAnchors[i]||t.rayAnchors[i].distanceTo(p)>6){
+  const existing=t.rayAnchors[i] instanceof THREE.Vector3?t.rayAnchors[i]:t.rayAnchors[i]?.pos;
+  if(!existing||existing.distanceTo(p)>6){
    const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
    t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);

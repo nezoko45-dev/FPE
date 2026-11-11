@@ -153,27 +153,20 @@ function updateSurvivors(dt){
 }
 function nearestNode(p){const ix=Math.round(p.x/navCell),iz=Math.round(p.z/navCell);let best=null,bestD=Infinity;for(let x=ix-2;x<=ix+2;x++)for(let z=iz-2;z<=iz+2;z++){const n=navNodes.get(cellKey(x,z));if(!n||!n.links.length)continue;const d=n.p.distanceToSquared(p);if(d<bestD){best=n;bestD=d}}return best}
 // Ray-bridge steering only. Hold each selected bridge waypoint to prevent frame-to-frame jitter.
-let circleWaypoint=null;
-function moveCircleStraightToward(target,speed,dt){
- // Emergency fallback: if a survivor has been stationary for 3 seconds,
- // stop insisting on blocked ray bridges and walk directly toward them.
- const delta=target.clone().sub(circle.position).setY(0),distance=delta.length();
- if(distance>1e-4){const step=delta.normalize().multiplyScalar(Math.min(speed*dt,distance));circle.position.add(step);const desired=Math.atan2(step.x,step.z);let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;circle.rotation.y+=diff*Math.min(1,dt*5);}
+// Miss Circle now uses the exact same independent ray-anchor locomotion as Miss Thavel.
+let circleRayAgent=null;
+function ensureCircleRayAgent(){
+ if(!circle||!circleRayAgent)circleRayAgent={root:circle,rayAnchors:null};
+ circleRayAgent.root=circle;
+ if(!circleRayAgent.rayAnchors)circleRayAgent.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(circle.position.x+Math.sin(i*Math.PI*2/16)*4,0,circle.position.z+Math.cos(i*Math.PI*2/16)*4)}));
+ return circleRayAgent;
 }
+function moveCircleStraightToward(target,speed,dt){moveCircleToward(target,speed,dt)}
 function moveCircleToward(target,speed,dt){
- const here=nearestNode(circle.position),goal=nearestNode(target);
- // If target is directly visible, prefer the straight ray and clear any stale waypoint.
- if(circleWaypoint&&circle.position.distanceTo(circleWaypoint)<=0.7)circleWaypoint=null;
- if(!circleWaypoint){if(clearBridge(circle.position,target))circleWaypoint=target.clone();else if(here&&goal){const candidates=here.links.filter(n=>clearBridge(circle.position,n.p));candidates.sort((a,b)=>a.p.distanceToSquared(goal.p)-b.p.distanceToSquared(goal.p));circleWaypoint=candidates[0]?.p.clone()||null}}
- if(!circleWaypoint)return;
- const delta=circleWaypoint.clone().sub(circle.position).setY(0),distance=delta.length();
- if(distance>1e-4){
-  const step=delta.normalize().multiplyScalar(Math.min(speed*dt,distance));
-  circle.position.add(step);
-  const desired=Math.atan2(step.x,step.z);
-  let diff=((desired-circle.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
-  circle.rotation.y+=diff*Math.min(1,dt*5);
- }
+ if(!circle)return;
+ // Teacher-style rays: 16 persistent anchors independently release/reseed,
+ // raycast against walls, verify floor, and select a progress-making bridge.
+ teacherRayStep(ensureCircleRayAgent(),target,speed,dt);
 }
 // player
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
@@ -324,7 +317,7 @@ const pCell=cellKey(Math.floor(player.pos.x/navCell),Math.floor(player.pos.z/nav
 updateSurvivors(dt);
 if(circle){
  if(isDay){mode='calm';scheduledHuntTarget=null;circleWaypoint=null;circlePatrolPoint=null;const retreat=circleHome.clone().sub(circle.position).setY(0),rd=retreat.length();if(rd>.15){circle.position.add(retreat.normalize().multiplyScalar(Math.min(4*dt,rd)));playAnim('walk')}else playAnim('idle');setChaseVisual(false);return;}
- ensureChunksAround(circle.position);const gridCenter=player.pos.clone();if(navNodes.size===0||navDirty||Math.floor(gridCenter.x/CHUNK)!==Math.floor(navCenter.x/CHUNK)||Math.floor(gridCenter.z/CHUNK)!==Math.floor(navCenter.z/CHUNK)){navCenter.copy(gridCenter);rebuildNav(navCenter);}bridgeViz.position.set(0,0,0);const cp=circle.position;
+ ensureChunksAround(circle.position);const cp=circle.position;
  // Every 11 seconds, select whoever moved most recently (player OR any survivor).
  // Hold the selected target for a full 11 seconds, regardless of respawn.
  if(!scheduledHuntTarget||elapsed>=huntSwitchAt){
@@ -375,13 +368,13 @@ if(circle){
   // this is walking/patrolling, never a chase. Refresh the destination every 11s.
   if(!dead&&elapsed-(playerMovedCellAt||0)<=2)movers.push({pos:player.pos,stamp:playerMovedCellAt||0});
   for(const a of survivors)if(!a.dead&&elapsed-(a.movedCellAt||0)<=2)movers.push({pos:a.root.position,stamp:a.movedCellAt||0});
-  const currentCell=cellPos(Math.round(cp.x/navCell),Math.round(cp.z/navCell));
+  const currentCell=cp;
   // Detect anyone occupying Miss Circle's exact grid cell, even if they
   // stopped moving; then patrol to that cell. Player and survivors both count.
   const occupants=[];
   if(!dead&&Math.round(player.pos.x/navCell)===Math.round(cp.x/navCell)&&Math.round(player.pos.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:player.pos,stamp:playerMovedCellAt||0});
   for(const a of survivors)if(!a.dead&&Math.round(a.root.position.x/navCell)===Math.round(cp.x/navCell)&&Math.round(a.root.position.z/navCell)===Math.round(cp.z/navCell))occupants.push({pos:a.root.position,stamp:a.movedCellAt||0});
-  const crossing=movers.filter(m=>m.pos.distanceTo(currentCell)<=navCell*1.6).sort((a,b)=>b.stamp-a.stamp)[0];
+  const crossing=movers.sort((a,b)=>b.stamp-a.stamp)[0];
   const patrolTarget=occupants[0]||crossing||movers.sort((a,b)=>cp.distanceTo(a.pos)-cp.distanceTo(b.pos))[0];
   circle.userData.huntTarget=null;
   if(patrolTarget){mode='patrol';circlePatrolPoint=null;moveCircleToward(patrolTarget.pos,3.2,dt);playAnim('walk')}

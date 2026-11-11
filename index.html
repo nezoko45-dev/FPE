@@ -25,7 +25,7 @@ function makeChunk(cx,cz){
   let gx=cx*2+ax,gz=cz*2+az,x=gx*10,z=gz*10;
   // Continuous floor, overhead ceiling, and roof slab for every generated tile.
   const floor=block(x,-.16,z,10,.3,10,floorMat,false);floor.userData.schoolMesh=true;
-  const roofA=block(x,3.15,z,10,.3,10,roofMat,false);const roofB=block(x,3.45,z,10,.3,10,roofMat,false);roofA.userData.schoolMesh=true;roofB.userData.schoolMesh=true;schoolRoofs.push(roofA,roofB);
+  const roofA=block(x,3.15,z,10,.3,10,roofMat,false);const roofB=block(x,3.45,z,10,.3,10,roofMat,false);roofA.userData.schoolMesh=true;roofB.userData.schoolMesh=true;roofA.visible=false;roofB.visible=false;schoolRoofs.push(roofA,roofB);
   const lamp=new THREE.Mesh(new THREE.BoxGeometry(1.4,.08,.35),ceilingLightMat);lamp.position.set(x,2.93,z);scene.add(lamp);const glow=new THREE.PointLight(0xffe6a3,2.2,9);glow.position.set(x,2.65,z);scene.add(glow);lamp.visible=true;glow.visible=true;ceilingLights.push({lamp,glow});
   if(Math.abs(gx)%2===0&&Math.abs(gz)%2===0){
    for(const w of [block(x,1.5,z-4.5,9,3,.25,wallMat),block(x-4.5,1.5,z,.25,3,9,wallMat),block(x+4.5,1.5,z,.25,3,9,wallMat)])w.userData.schoolMesh=true;
@@ -127,6 +127,7 @@ const survivors=Array.from({length:4},(_,i)=>makeSurvivor(i));
 function animateSurvivor(a,run,dt){a.phase+=dt*(run?11:6);const swing=Math.sin(a.phase)*(run?.62:.38);a.legs[0].rotation.x=swing;a.legs[1].rotation.x=-swing;a.arms[0].rotation.x=-swing*.7;a.arms[1].rotation.x=swing*.7;a.root.position.y=Math.abs(Math.sin(a.phase))*(run?.07:.035)}
 function updateSurvivors(dt){
  for(const a of survivors){
+  if(!a.dead)a.root.visible=true;
   if(a.dead){if(elapsed>=a.respawnAt){a.dead=false;a.hp=a.maxHp;a.root.visible=true;a.root.position.copy(survivorSpawnPoint());a.root.userData.waypoint=null;a.movedCellAt=elapsed;a.movedCellPos=a.root.position.clone();a.lastOccupiedCell=null;a.lastTargetId=null;a.lastTargetDistance=0;a.stuckSince=elapsed;}else continue;}
   // Each survivor autonomously targets the nearest unclaimed paper/Oreo.
   let targetItem=null,best=Infinity;

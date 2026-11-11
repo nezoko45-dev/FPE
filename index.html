@@ -10,10 +10,10 @@
 <script type="module">
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-const scene=new THREE.Scene();const normalColor=new THREE.Color(0x9ba8b9),chaseColor=new THREE.Color(0xb00000);scene.background=normalColor.clone();scene.fog=new THREE.Fog(normalColor,35,105);let chaseVisual=false;function setChaseVisual(on){if(chaseVisual===on)return;chaseVisual=on;scene.background.copy(on?chaseColor:normalColor);scene.fog.color.copy(on?chaseColor:normalColor);setChaseLighting(on);}
+const scene=new THREE.Scene();const normalColor=new THREE.Color(0x9ba8b9),chaseColor=new THREE.Color(0xb00000);scene.background=normalColor.clone();scene.fog=new THREE.Fog(normalColor,35,105);let chaseVisual=false;function setChaseVisual(on){if(chaseVisual===on)return;chaseVisual=on;applyDayNight();}
 const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,250);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
-const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);const ambientNormal=2, sunNormal=2.3;let dayPhase=0;const DAY_DURATION=150,NIGHT_DURATION=480;let isDay=true;const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323);function setChaseLighting(on){hemi.intensity=on?.75:(isDay?ambientNormal:.45);sun.intensity=on?.35:(isDay?sunNormal:.18);}
+const hemi=new THREE.HemisphereLight(0xe5efff,0x514638,2);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(15,30,10);sun.castShadow=true;scene.add(sun);const ambientNormal=2,sunNormal=2.3;let dayPhase=0;const DAY_DURATION=150,NIGHT_DURATION=480,TRANSITION_SECONDS=9;let isDay=true,nightBlend=0;const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),cycleSky=new THREE.Color();scene.fog=new THREE.Fog(daySky,150,260);function setChaseLighting(on){hemi.intensity=THREE.MathUtils.lerp(ambientNormal,.45,nightBlend)*(on?.45:1);sun.intensity=THREE.MathUtils.lerp(sunNormal,.18,nightBlend)*(on?.2:1);}
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.88});const floorMat=mat(0xaaa7a0),wallMat=mat(0xd8d4c9),trimMat=mat(0x625c5a);
 const floorMeshes=[];function block(x,y,z,sx,sy,sz,m,coll=true){let o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(m===wallMat)wallMeshes.push(o);if(m===floorMat)floorMeshes.push(o);if(coll)walls.push(new THREE.Box3().setFromObject(o));return o}
 const walls=[],wallMeshes=[],schoolRoofs=[],chunks=new Map(),CHUNK=20;let navDirty=true;
@@ -304,8 +304,29 @@ document.addEventListener('click',()=>{if(started&&document.pointerLockElement!=
 document.addEventListener('mousemove',e=>{if(!locked)return;player.yaw-=e.movementX*.002;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))});
 document.querySelector('#start').onclick=()=>{started=true;document.querySelector('#overlay').style.display='none';camera.position.set(player.pos.x,1.65,player.pos.z);renderer.domElement.requestPointerLock();initializeWorldLighting();document.querySelector('#status').textContent='Find the test papers. Stay alert.';};
 const clock=new THREE.Clock();let elapsed=0,huntSwitchAt=0,scheduledHuntTarget=null,circlePatrolPoint=null;
-function applyDayNight(){isDay=true;scene.background.copy(daySky);scene.fog.color.copy(daySky);hemi.intensity=ambientNormal;sun.intensity=sunNormal;sun.position.set(15,30,10);ceilingLights.forEach(l=>{l.lamp.visible=true;l.glow.visible=true});}function initializeWorldLighting(){applyDayNight();}
-function update(dt){if(!started||testOpen)return;elapsed+=dt;if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
+function applyDayNight(){
+ const cycleLength=DAY_DURATION+NIGHT_DURATION;
+ dayPhase=((dayPhase%cycleLength)+cycleLength)%cycleLength;
+ isDay=dayPhase<DAY_DURATION;
+ // Blend over the final/initial seconds of each phase; never snap global lighting.
+ let blend=0;
+ if(dayPhase>=DAY_DURATION-TRANSITION_SECONDS&&dayPhase<DAY_DURATION+TRANSITION_SECONDS){
+  blend=(dayPhase-(DAY_DURATION-TRANSITION_SECONDS))/(TRANSITION_SECONDS*2);
+ }else if(dayPhase>=cycleLength-TRANSITION_SECONDS){
+  blend=(dayPhase-(cycleLength-TRANSITION_SECONDS)+TRANSITION_SECONDS)/(TRANSITION_SECONDS*2);
+ }
+ nightBlend=THREE.MathUtils.smoothstep(blend,0,1);
+ cycleSky.copy(daySky).lerp(nightSky,nightBlend);
+ scene.background.copy(chaseVisual?chaseColor:cycleSky);
+ scene.fog.color.copy(chaseVisual?chaseColor:cycleSky);
+ hemi.intensity=THREE.MathUtils.lerp(ambientNormal,.45,nightBlend)*(chaseVisual?.45:1);
+ sun.intensity=THREE.MathUtils.lerp(sunNormal,.18,nightBlend)*(chaseVisual?.2:1);
+ sun.position.set(15,THREE.MathUtils.lerp(30,12,nightBlend),10);
+ // Interior fixtures stay on through the entire exterior cycle.
+ ceilingLights.forEach(l=>{l.lamp.visible=true;l.glow.visible=true});
+}
+function initializeWorldLighting(){applyDayNight();}
+function update(dt){if(!started||testOpen)return;elapsed+=dt;dayPhase=(dayPhase+dt)%(DAY_DURATION+NIGHT_DURATION);applyDayNight();if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}
 if(elapsed-lastPaper>12+Math.random()*8){spawn('paper',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastPaper=elapsed}if(elapsed-lastOreo>9+Math.random()*10){spawn('oreo',player.pos.x+(Math.random()*24-12),player.pos.z+(Math.random()*24-12));lastOreo=elapsed}

@@ -208,6 +208,17 @@ function updateTeacherRayGizmos(){
  const positions=[],colors=[];
  const add=(a,b,color)=>{positions.push(a.x,a.y,a.z,b.x,b.y,b.z);colors.push(color.r,color.g,color.b,color.r,color.g,color.b)};
  for(const t of teachers){if(!t.root)continue;const p=t.root.position;
+ // Miss Circle uses the same ray-anchor bridge AI; render her 16 rays too.
+ if(circle){
+  const agent=ensureCircleRayAgent(),p= circle.position;
+  for(const cell of agent.rayAnchors){
+   const anchor=new THREE.Vector3(cell.pos.x,.9,cell.pos.z),origin=new THREE.Vector3(p.x,.9,p.z),delta=anchor.clone().sub(origin),distance=delta.length();
+   if(distance<.01)continue;raycaster.set(origin,delta.normalize());raycaster.far=distance;
+   const hit=raycaster.intersectObjects(wallMeshes,false)[0],end=hit?hit.point:anchor;
+   const ground=teacherGroundClear(cell.pos.x,cell.pos.z);
+   add(new THREE.Vector3(p.x,.12,p.z),new THREE.Vector3(end.x,.12,end.z),hit?new THREE.Color(0xff3344):ground?new THREE.Color(0x35ff78):new THREE.Color(0xffcc33));
+  }
+ }
   // Each ray owns a persistent world-space anchor. It releases and re-seeds
   // independently once its teacher has moved 9.5 units away.
   if(!t.rayAnchors)t.rayAnchors=Array.from({length:16},(_,i)=>({angle:i*Math.PI*2/16,pos:new THREE.Vector3(p.x+Math.sin(i*Math.PI*2/16)*4,0,p.z+Math.cos(i*Math.PI*2/16)*4)}));

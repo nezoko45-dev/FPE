@@ -71,7 +71,7 @@ function stepTeacher(t,dt){
  for(let i=0;i<8;i++){
   const heading=t.root.rotation.y+i*Math.PI*2/8;
   let raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;
-  if(!anchor||!anchor.isVector3||anchor.distanceTo(p)>7){
+  if(!anchor||!anchor.isVector3){
    const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
    anchor=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);t.rayAnchors[i]=anchor;
@@ -106,7 +106,7 @@ function updateTeacherGizmos(t){
  if(!t.rayAnchors)t.rayAnchors=[];
  for(let i=0;i<8;i++){
   const heading=t.root.rotation.y+i*Math.PI*2/8,raw=t.rayAnchors[i],anchor=raw instanceof THREE.Vector3?raw:raw?.pos;
-  if(!anchor||anchor.distanceTo(p)>7){
+  if(!anchor){
    const probe=new THREE.Vector3(p.x+Math.sin(heading)*5.5,8,p.z+Math.cos(heading)*5.5);
    const ground=new THREE.Raycaster(probe,new THREE.Vector3(0,-1,0),0,12).intersectObject(groundPlane,false)[0];
    t.rayAnchors[i]=ground?ground.point.clone():new THREE.Vector3(probe.x,0,probe.z);

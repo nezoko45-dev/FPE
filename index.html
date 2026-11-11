@@ -60,7 +60,7 @@ function drawBridgeGizmos(){
  // Each node is a visible spaced cell; each green segment is a successful ray bridge to its neighbor.
  for(const n of navNodes.values())for(const q of n.links){if(n.ix<q.ix||(n.ix===q.ix&&n.iz<q.iz))pts.push(n.p.x,.16,n.p.z,q.p.x,.16,q.p.z)}
  if(pts.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));bridgeViz.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x33ff77,transparent:true,opacity:.8})))}
- const cellGeo=new THREE.BoxGeometry(.22,.22,.22),cellMat=new THREE.MeshBasicMaterial({color:0xffe45c});const cells=new THREE.InstancedMesh(cellGeo,cellMat,navNodes.size);const dummy=new THREE.Object3D();let i=0;for(const n of navNodes.values()){dummy.position.set(n.p.x,.16,n.p.z);dummy.updateMatrix();cells.setMatrixAt(i++,dummy.matrix)}cells.instanceMatrix.needsUpdate=true;bridgeViz.add(cells);
+ // Grid-cell cube gizmos removed; optional bridge lines remain.
 }
 function addGridChunk(cx,cz){const id=cx+','+cz;if(gridChunks.has(id))return;gridChunks.add(id);const minX=Math.floor(cx*CHUNK/navCell),maxX=Math.ceil((cx+1)*CHUNK/navCell),minZ=Math.floor(cz*CHUNK/navCell),maxZ=Math.ceil((cz+1)*CHUNK/navCell);for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++)navNodes.set(cellKey(ix,iz),{ix,iz,p:cellPos(ix,iz),links:[]});}
 function rebuildNav(center){

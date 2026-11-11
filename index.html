@@ -330,7 +330,12 @@ function applyDayNight(){
  // Interior fixtures stay on through the entire exterior cycle.
  ceilingLights.forEach(l=>{l.lamp.visible=true;l.glow.visible=true});
 }
-function initializeWorldLighting(){applyDayNight();}
+function initializeWorldLighting(){
+ // Reinitialize cycle state cleanly on every NEW GAME, without touching world objects.
+ dayPhase=0;isDay=true;nightBlend=0;cycleSky.copy(daySky);
+ scene.background.copy(daySky);scene.fog.color.copy(daySky);
+ applyDayNight();
+}
 function update(dt){if(!started||testOpen)return;elapsed+=dt;dayPhase=(dayPhase+dt)%(DAY_DURATION+NIGHT_DURATION);applyDayNight();if(dead&&elapsed>=playerRespawnAt){dead=false;playerHp=playerMaxHp;player.pos.set(0,0,0);player.yaw=0;document.querySelector('#msg').textContent='';hud();}
 // Seed collectibles in every newly generated chunk, including chunks created while exploring.
 for(const id of chunks.keys()){if(lootChunks.has(id))continue;lootChunks.add(id);const [cx,cz]=id.split(',').map(Number);const bx=cx*CHUNK,bz=cz*CHUNK;spawn('paper',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4));if(Math.random()<.8)spawn('oreo',bx+2+Math.random()*(CHUNK-4),bz+2+Math.random()*(CHUNK-4))}

@@ -261,7 +261,7 @@ function stepTeacher(t,dt){
  // Movement is exclusively the sampled flowfield vector; target distance never steers or slows locomotion.
  steerTeacherWaypoints(t,target,dt,t.speed);
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
- if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
+ if(nearest<2.8&&elapsed-t.attackAt>1.0){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=1.5){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const victim=survivors.find(a=>!a.dead&&a.root.position===target);if(victim){victim.hp-=50;if(victim.hp<=0){victim.dead=true;victim.respawn=elapsed+8;victim.root.visible=false;victim.root.userData.collectFlow=null;victim.root.userData.collectWaypoints=null}}}}}
 }
 function obstaclesMeshes(){return rayMeshes}
 const rayDirs=Array.from({length:8},(_,i)=>new THREE.Vector3(Math.cos(i*Math.PI/4),0,Math.sin(i*Math.PI/4)));

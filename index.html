@@ -297,10 +297,22 @@ for(const s of survivors){
     ud.collectFlow=buildTeacherFlowField(goal);ud.collectFlowAt=elapsed;ud.collectItem=target;
    }
    const f=ud.collectFlow,p=s.root.position;
-   if(f){const ix=Math.floor((p.x-f.minX)/f.cell),iz=Math.floor((p.z-f.minZ)/f.cell);
-    if(ix>=0&&iz>=0&&ix<f.cols&&iz<f.rows){let id=iz*f.cols+ix,dx=f.vx[id],dz=f.vz[id];
-     if((!dx&&!dz)||f.dist[id]<0){let found=-1,bd=1e9;for(let rr=1;rr<=5&&found<0;rr++)for(let zz=-rr;zz<=rr;zz++)for(let xx=-rr;xx<=rr;xx++){const x=ix+xx,z=iz+zz;if(x<0||z<0||x>=f.cols||z>=f.rows)continue;const ni=z*f.cols+x;if(f.dist[ni]>=0&&f.dist[ni]>0&&xx*xx+zz*zz<bd){found=ni;bd=xx*xx+zz*zz}}if(found>=0){dx=f.vx[found];dz=f.vz[found]}}
-     const m=Math.hypot(dx,dz);if(m){dx/=m;dz/=m;const a=Math.atan2(dx,dz);s.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-s.root.rotation.y),Math.cos(a-s.root.rotation.y))));const nx=p.x+dx*2.4*dt,nz=p.z+dz*2.4*dt;if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;s.moveDir.set(dx,0,dz)}}
+   if(f){
+    const goal=goalPosition(target),ud=s.root.userData;
+    // If furniture blocks the straight collectible path, route the survivor through the shared waypoint blocks.
+    if(!teacherSegmentClear(p.x,p.z,goal.x,goal.z)){
+     if(!ud.collectWaypoints||ud.collectWaypointItem!==target||elapsed-(ud.collectWaypointAt||0)>.4||Math.hypot(goal.x-(ud.collectWaypointX||0),goal.z-(ud.collectWaypointZ||0))>1.2){
+      ud.collectWaypoints=buildTeacherWaypoints(s,goal);ud.collectWaypoint=1;ud.collectWaypointAt=elapsed;ud.collectWaypointItem=target;ud.collectWaypointX=goal.x;ud.collectWaypointZ=goal.z;
+     }
+     const route=ud.collectWaypoints;
+     if(route&&route.length>1){while(ud.collectWaypoint<route.length-1&&Math.hypot(route[ud.collectWaypoint].x-p.x,route[ud.collectWaypoint].z-p.z)<.45)ud.collectWaypoint++;moveTeacherToward(s,route[Math.min(ud.collectWaypoint,route.length-1)],dt,2.4)}
+    }else{
+     ud.collectWaypoints=null;ud.collectWaypoint=0;
+     const ix=Math.floor((p.x-f.minX)/f.cell),iz=Math.floor((p.z-f.minZ)/f.cell);
+     if(ix>=0&&iz>=0&&ix<f.cols&&iz<f.rows){let id=iz*f.cols+ix,dx=f.vx[id],dz=f.vz[id];
+      if((!dx&&!dz)||f.dist[id]<0){let found=-1,bd=1e9;for(let rr=1;rr<=5&&found<0;rr++)for(let zz=-rr;zz<=rr;zz++)for(let xx=-rr;xx<=rr;xx++){const x=ix+xx,z=iz+zz;if(x<0||z<0||x>=f.cols||z>=f.rows)continue;const ni=z*f.cols+x;if(f.dist[ni]>=0&&f.dist[ni]>0&&xx*xx+zz*zz<bd){found=ni;bd=xx*xx+zz*zz}}if(found>=0){dx=f.vx[found];dz=f.vz[found]}}
+      const m=Math.hypot(dx,dz);if(m){dx/=m;dz/=m;const a=Math.atan2(dx,dz);s.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-s.root.rotation.y),Math.cos(a-s.root.rotation.y))));const nx=p.x+dx*2.4*dt,nz=p.z+dz*2.4*dt;if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;s.moveDir.set(dx,0,dz)}}
+     }
     }
    }
    s.target=target

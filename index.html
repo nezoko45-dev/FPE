@@ -155,7 +155,7 @@ function buildTeacherFlowField(target){
    const drop=dist[id]-nd,weight=drop/(Math.hypot(ox,oz));
    gx+=ox*weight;gz+=oz*weight;
   }
-  if(Math.hypot(gx,gz)>1e-5){vx[id]=-gx;vz[id]=-gz;}
+  if(Math.hypot(gx,gz)>1e-5){vx[id]=gx;vz[id]=gz;}
  }
  return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,mapTileCount:generatedTiles.size,at:elapsed};
 }

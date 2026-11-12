@@ -107,7 +107,7 @@ function buildTeacherBreadcrumbs(t,target){
 
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0);
- if(!t.coordRoute||!t.coordTarget||t.coordTarget.distanceTo(goal)>2.2||t.coordWaypoint>=t.coordRoute.length-1||elapsed-(t.coordRouteAt||0)>2.5)buildTeacherBreadcrumbs(t,goal);
+ if(!t.coordRoute||!t.coordTarget||t.coordTarget.distanceTo(goal)>2.2||t.coordWaypoint>=t.coordRoute.length-1)buildTeacherBreadcrumbs(t,goal);
  let route=t.coordRoute||[],wi=t.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;t.coordWaypoint=wi;let wp=route[wi];
  if(!wp){buildTeacherBreadcrumbs(t,goal);route=t.coordRoute||[];wi=1;wp=route[wi];t.coordWaypoint=wi}if(!wp)return false;
  const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y));

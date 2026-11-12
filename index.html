@@ -167,21 +167,19 @@ function teacherSegmentClear(x,z,nx,nz){
  return true
 }
 function buildTeacherWaypoints(t,target){
- if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
- const p=t.root.position,cols=schoolScoreCols,rows=schoolScoreRows,total=cols*rows;
- const toId=(x,z)=>Math.max(0,Math.min(rows-1,Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL)))*cols+Math.max(0,Math.min(cols-1,Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL)));
- const nearestBlock=id=>{if(schoolScoreMap[id])return id;const x=id%cols,z=(id/cols)|0;for(let r=1;r<30;r++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){if(Math.abs(dx)!==r&&Math.abs(dz)!==r)continue;const xx=x+dx,zz=z+dz;if(xx>=0&&zz>=0&&xx<cols&&zz<rows){const n=zz*cols+xx;if(schoolScoreMap[n])return n}}return -1};
- const sid=nearestBlock(toId(p.x,p.z)),gid=nearestBlock(toId(target.x,target.z));if(sid<0||gid<0)return [];
- // Route through the pre-generated block mesh network, not a fresh BFS over raw map cells.
- const nodeSet=new Set(schoolWaypointNodes),parent=new Int32Array(total);parent.fill(-1);const queue=new Int32Array(total);let head=0,tail=0;queue[tail++]=sid;parent[sid]=sid;
- const dirs=[[-1,0],[1,0],[0,-1],[0,1]];
- while(head<tail&&parent[gid]<0){const id=queue[head++],x=id%cols,z=(id/cols)|0;for(const [dx,dz] of dirs){const xx=x+dx,zz=z+dz;if(xx<0||zz<0||xx>=cols||zz>=rows)continue;const n=zz*cols+xx;if(!nodeSet.has(n)||parent[n]>=0)continue;parent[n]=id;queue[tail++]=n}}
- if(parent[gid]<0)return [];
- const ids=[];for(let n=gid;n!==sid;n=parent[n])ids.push(n);ids.reverse();
- const route=[new THREE.Vector3(p.x,0,p.z)];for(const id of ids)route.push(new THREE.Vector3(schoolScoreMinX+(id%cols+.5)*SCHOOL_SCORE_CELL,0,schoolScoreMinZ+(((id/cols)|0)+.5)*SCHOOL_SCORE_CELL));route.push(target.clone().setY(0));
- // Greedily follow visible block-to-block corridors, skipping cubes only when segment is clear.
- const pulled=[route[0]];let i=1,cur=route[0];while(i<route.length-1){let far=i;for(let j=route.length-2;j>=i;j--)if(teacherSegmentClear(cur.x,cur.z,route[j].x,route[j].z)){far=j;break}cur=route[far];pulled.push(cur);i=far+1}pulled.push(route[route.length-1]);return pulled
-}function steerTeacherWaypoints(t,target,dt,speed){
+ // No BFS/A*: when direct chase is blocked, choose a nearby visible waypoint block to bend around the obstruction.
+ const p=t.root.position,goal=target.clone().setY(0),dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz)||1,ux=dx/dist,uz=dz/dist;
+ let best=null,bestScore=-Infinity;const stride=Math.max(1,Math.floor(schoolWaypointNodes.length/12000));
+ for(let k=0;k<schoolWaypointNodes.length;k+=stride){
+  const id=schoolWaypointNodes[k],x=schoolScoreMinX+(id%schoolScoreCols+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(((id/schoolScoreCols)|0)+.5)*SCHOOL_SCORE_CELL;
+  const wx=x-p.x,wz=z-p.z,wd=Math.hypot(wx,wz);if(wd<.7||wd>6||!teacherSegmentClear(p.x,p.z,x,z))continue;
+  const alignment=(wx*ux+wz*uz)/wd,progress=dist-Math.hypot(goal.x-x,goal.z-z);if(alignment<-.25||progress<-.15)continue;
+  const score=progress*2.5+alignment*1.4-wd*.12;if(score>bestScore){bestScore=score;best={x,z}}
+ }
+ if(!best)return [];
+ return [new THREE.Vector3(p.x,0,p.z),new THREE.Vector3(best.x,0,best.z),goal];
+}
+function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,ud=t.root.userData,goal=target.clone().setY(0);
  // Directly pursue the target if unobstructed; create a BFS waypoint route only when blocked.
  if(teacherSegmentClear(p.x,p.z,goal.x,goal.z)){ud.teacherWaypoints=null;ud.teacherWaypoint=0;return moveTeacherToward(t,goal,dt,speed)}

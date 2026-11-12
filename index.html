@@ -176,7 +176,7 @@ function buildTeacherWaypoints(t,target){
  while(h<tail&&parent[gid]<0){const id=queue[h++],x=id%cols,z=(id/cols)|0;for(const [dx,dz] of dirs){const xx=x+dx,zz=z+dz;if(xx<0||zz<0||xx>=cols||zz>=rows)continue;const n=zz*cols+xx;if(!schoolScoreMap[n]||parent[n]>=0)continue;parent[n]=id;queue[tail++]=n}}
  if(parent[gid]<0)return [];
  const ids=[];for(let n=gid;n!==sid;n=parent[n])ids.push(n);ids.reverse();
- const pts=ids.map(id=>new THREE.Vector3(schoolScoreMinX+(id%cols+.5)*cell,0,schoolScoreMinZ+((id/cols)|0+.5)*cell));
+ const pts=ids.map(id=>new THREE.Vector3(schoolScoreMinX+(id%cols+.5)*cell,0,schoolScoreMinZ+(((id/cols)|0)+.5)*cell));
  // Pull waypoints forward wherever a clear segment can skip intermediate grid blocks.
  const route=[new THREE.Vector3(p.x,0,p.z)];let cur=route[0],i=0;while(i<pts.length){let far=i;for(let j=pts.length-1;j>=i;j--)if(teacherSegmentClear(cur.x,cur.z,pts[j].x,pts[j].z)){far=j;break}cur=pts[far];route.push(cur);i=far+1}route.push(target.clone().setY(0));return route
 }

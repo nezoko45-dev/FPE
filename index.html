@@ -181,20 +181,31 @@ function buildTeacherWaypoints(t,target){
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
- // Direct chase first. Only use an immediately visible waypoint block when furniture blocks the target.
- if(teacherSegmentClear(p.x,p.z,goal.x,goal.z)){ud.teacherWaypoints=null;ud.teacherWaypoint=0;return moveTeacherToward(t,goal,dt,speed)}
- let block=null,best=Infinity;const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz)||1,ux=dx/dist,uz=dz/dist;
- const stride=Math.max(1,Math.floor(schoolWaypointNodes.length/18000));
- for(let k=0;k<schoolWaypointNodes.length;k+=stride){
-  const id=schoolWaypointNodes[k],x=schoolScoreMinX+(id%schoolScoreCols+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(((id/schoolScoreCols)|0)+.5)*SCHOOL_SCORE_CELL;
-  const wx=x-p.x,wz=z-p.z,d=Math.hypot(wx,wz);if(d<.55||d>5||!teacherSegmentClear(p.x,p.z,x,z))continue;
-  const alignment=(wx*ux+wz*uz)/d,progress=dist-Math.hypot(goal.x-x,goal.z-z);if(alignment<-.15||progress<-.35)continue;
-  const score=d+Math.max(0,-progress)*2-alignment*1.8;if(score<best){best=score;block={x,z}}
+ // Continuous vector steering: target attraction + local obstacle repulsion from ground occupancy samples.
+ const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);
+ if(dist<.12)return false;
+ let gx=dx/dist,gz=dz/dist;
+ const sampleRadius=[.55,.95,1.4],dirs=12;
+ for(const radius of sampleRadius)for(let k=0;k<dirs;k++){
+  const a=k*Math.PI*2/dirs,sx=Math.sin(a),sz=Math.cos(a);
+  if(teacherGroundScore(p.x+sx*radius,p.z+sz*radius)!==1){
+   const strength=(1/radius)*(radius===.55?2.1:radius===.95?1.15:.55);
+   gx-=sx*strength;gz-=sz*strength;
+  }
  }
- if(block)return moveTeacherToward(t,block,dt,speed);
- // No clear block in front: safely sidestep locally rather than invoking a route planner.
- const angle=Math.atan2(dx,dz);for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4,vx=Math.sin(a),vz=Math.cos(a),nx=p.x+vx*speed*dt,nz=p.z+vz*speed*dt;if(teacherGroundScore(nx,nz)===1&&teacherSegmentClear(p.x,p.z,nx,nz)){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);t.root.rotation.y=a;return true}}
- return false;
+ // Weight the target vector strongly enough to keep the teacher pursuing its target.
+ gx+=dx/dist*1.8;gz+=dz/dist*1.8;
+ let mag=Math.hypot(gx,gz);if(mag<1e-5)return false;gx/=mag;gz/=mag;
+ // Try the blended vector first, then nearby headings if its step is obstructed.
+ const heading=Math.atan2(gx,gz),step=speed*dt;
+ for(const turn of [0,-1,1,-2,2,-3,3,4]){
+  const a=heading+turn*Math.PI/8,vx=Math.sin(a),vz=Math.cos(a),nx=p.x+vx*step,nz=p.z+vz*step;
+  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))continue;
+  p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);
+  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
+  ud.teacherVector=new THREE.Vector3(gx,0,gz);return true;
+ }
+ ud.teacherVector=new THREE.Vector3(gx,0,gz);return false;
 }
 function moveTeacherToward(t,point,dt,speed){
  const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);if(dist<.06)return true;

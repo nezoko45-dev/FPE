@@ -159,24 +159,44 @@ function buildTeacherFlowField(target){
  }
  return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,mapTileCount:generatedTiles.size,at:elapsed};
 }
-function scoreSteerTeacher(t,target,dt,speed){
- const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
- // Refresh the target-seeded field occasionally; movement itself only follows stored cell vectors.
- if(!ud.teacherFlow||ud.teacherFlow.mapVersion!==schoolFlowMapVersion||elapsed-(ud.teacherFlowAt||0)>.18||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>.35||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length){
-  ud.teacherFlow=buildTeacherFlowField(goal);ud.teacherFlowAt=elapsed;
+function teacherSegmentClear(x,z,nx,nz){
+ const steps=Math.max(2,Math.ceil(Math.hypot(nx-x,nz-z)/.18));
+ for(let k=1;k<=steps;k++){const q=k/steps;if(teacherGroundScore(x+(nx-x)*q,z+(nz-z)*q)!==1)return false}
+ return true
+}
+function buildTeacherWaypoints(t,target){
+ if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ const p=t.root.position,cell=SCHOOL_SCORE_CELL,cols=schoolScoreCols,rows=schoolScoreRows;
+ const toCell=(x,z)=>({x:Math.max(0,Math.min(cols-1,Math.floor((x-schoolScoreMinX)/cell))),z:Math.max(0,Math.min(rows-1,Math.floor((z-schoolScoreMinZ)/cell)))});
+ let s=toCell(p.x,p.z),g=toCell(target.x,target.z),sid=s.z*cols+s.x,gid=g.z*cols+g.x;
+ const nearestOpen=(id)=>{if(schoolScoreMap[id])return id;const x=id%cols,z=(id/cols)|0;for(let r=1;r<30;r++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){if(Math.abs(dx)!==r&&Math.abs(dz)!==r)continue;const xx=x+dx,zz=z+dz;if(xx>=0&&zz>=0&&xx<cols&&zz<rows){const n=zz*cols+xx;if(schoolScoreMap[n])return n}}return -1};
+ sid=nearestOpen(sid);gid=nearestOpen(gid);if(sid<0||gid<0)return [];
+ const parent=new Int32Array(cols*rows);parent.fill(-1);const queue=new Int32Array(cols*rows);let h=0,tail=0;queue[tail++]=sid;parent[sid]=sid;
+ const dirs=[[-1,0],[1,0],[0,-1],[0,1]];
+ while(h<tail&&parent[gid]<0){const id=queue[h++],x=id%cols,z=(id/cols)|0;for(const [dx,dz] of dirs){const xx=x+dx,zz=z+dz;if(xx<0||zz<0||xx>=cols||zz>=rows)continue;const n=zz*cols+xx;if(!schoolScoreMap[n]||parent[n]>=0)continue;parent[n]=id;queue[tail++]=n}}
+ if(parent[gid]<0)return [];
+ const ids=[];for(let n=gid;n!==sid;n=parent[n])ids.push(n);ids.reverse();
+ const pts=ids.map(id=>new THREE.Vector3(schoolScoreMinX+(id%cols+.5)*cell,0,schoolScoreMinZ+((id/cols)|0+.5)*cell));
+ // Pull waypoints forward wherever a clear segment can skip intermediate grid blocks.
+ const route=[new THREE.Vector3(p.x,0,p.z)];let cur=route[0],i=0;while(i<pts.length){let far=i;for(let j=pts.length-1;j>=i;j--)if(teacherSegmentClear(cur.x,cur.z,pts[j].x,pts[j].z)){far=j;break}cur=pts[far];route.push(cur);i=far+1}route.push(target.clone().setY(0));return route
+}
+function steerTeacherWaypoints(t,target,dt,speed){
+ const p=t.root.position,ud=t.root.userData,goal=target.clone().setY(0);
+ // Directly pursue the target if unobstructed; create a BFS waypoint route only when blocked.
+ if(teacherSegmentClear(p.x,p.z,goal.x,goal.z)){ud.teacherWaypoints=null;ud.teacherWaypoint=0;return moveTeacherToward(t,goal,dt,speed)}
+ if(!ud.teacherWaypoints||elapsed-(ud.teacherRouteAt||0)>.4||Math.hypot(goal.x-(ud.teacherRouteTargetX||0),goal.z-(ud.teacherRouteTargetZ||0))>1.2||ud.teacherWaypoints.mapVersion!==schoolFlowMapVersion){
+  ud.teacherWaypoints=buildTeacherWaypoints(t,goal);ud.teacherWaypoint=1;ud.teacherRouteAt=elapsed;ud.teacherRouteTargetX=goal.x;ud.teacherRouteTargetZ=goal.z;ud.teacherWaypoints.mapVersion=schoolFlowMapVersion
  }
- const f=ud.teacherFlow;if(!f)return false;
- const ix=Math.floor((p.x-f.minX)/f.cell),iz=Math.floor((p.z-f.minZ)/f.cell);
- if(ix<0||iz<0||ix>=f.cols||iz>=f.rows)return false;
- let id=iz*f.cols+ix,dx=f.vx[id],dz=f.vz[id];
- // Recover onto a nearby reachable vector if the teacher stands on a blocked/target seed cell.
- if((!dx&&!dz)||f.dist[id]<0){let best=-1,bd=1e9;for(let r=1;r<=5&&best<0;r++)for(let zz=-r;zz<=r;zz++)for(let xx=-r;xx<=r;xx++){const x=ix+xx,z=iz+zz;if(x<0||z<0||x>=f.cols||z>=f.rows)continue;const ni=z*f.cols+x;if(f.dist[ni]>=0&&f.dist[ni]>0&&xx*xx+zz*zz<bd){best=ni;bd=xx*xx+zz*zz}}if(best<0)return false;dx=f.vx[best];dz=f.vz[best]}
- const mag=Math.hypot(dx,dz);if(!mag)return false;dx/=mag;dz/=mag;
- const angle=Math.atan2(dx,dz);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
- const nx=p.x+dx*speed*dt,nz=p.z+dz*speed*dt;
- if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(dx,0,dz);return true}
- // Try adjacent field vectors in order of alignment when cell-edge collision occurs.
- for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4, sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*speed*dt,z=p.z+sz*speed*dt;if(schoolScoreAt(x,z)===1){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
+ const route=ud.teacherWaypoints;if(!route||route.length<2)return moveTeacherToward(t,goal,dt,speed);
+ while(ud.teacherWaypoint<route.length-1&&Math.hypot(route[ud.teacherWaypoint].x-p.x,route[ud.teacherWaypoint].z-p.z)<.45)ud.teacherWaypoint++;
+ const waypoint=route[Math.min(ud.teacherWaypoint,route.length-1)];return moveTeacherToward(t,waypoint,dt,speed)
+}
+function moveTeacherToward(t,point,dt,speed){
+ const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);if(dist<.06)return true;
+ const vx=dx/dist,vz=dz/dist,angle=Math.atan2(vx,vz);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+ const step=Math.min(speed*dt,dist),nx=p.x+vx*step,nz=p.z+vz*step;
+ if(teacherGroundScore(nx,nz)===1&&teacherSegmentClear(p.x,p.z,nx,nz)){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
+ for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4,sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*step,z=p.z+sz*step;if(teacherGroundScore(x,z)===1&&teacherSegmentClear(p.x,p.z,x,z)){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
  return false
 }
 function buildCoordinateTrail(agent,target){
@@ -219,7 +239,7 @@ function followCoordinateTrail(agent,target,dt,speed){
 
 function stepTeacher(t,dt){
  const p=t.root.position;
- if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){steerTeacherWaypoints(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  // Lock onto one moving target for 11 seconds, then choose the nearest living target again.
  const ud=t.root.userData;
@@ -234,7 +254,7 @@ function stepTeacher(t,dt){
  nearest=p.distanceTo(target);
  // Flowfield arrows track the locked target's moving position for the full 11 seconds.
  // Movement is exclusively the sampled flowfield vector; target distance never steers or slows locomotion.
- scoreSteerTeacher(t,target,dt,t.speed);
+ steerTeacherWaypoints(t,target,dt,t.speed);
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
  if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
 }

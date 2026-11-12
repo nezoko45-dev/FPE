@@ -144,9 +144,19 @@ function buildTeacherFlowField(target){
    dist[ni]=dist[id]+1;vx[ni]=-dx;vz[ni]=-dz;queue[tail++]=ni;
   }
  }
- // Convert BFS distances into a smooth downhill vector at every reachable cell.
- // The resulting arrows point toward lower distance values (the target), including diagonals.
- for(let z=0;z<schoolScoreRows;z++)for(let x=0;x<schoolScoreCols;x++){const id=z*schoolScoreCols+x;if(dist[id]<=0)continue;const left=x>0?dist[id-1]:dist[id],right=x+1<schoolScoreCols?dist[id+1]:dist[id],up=z>0?dist[id-schoolScoreCols]:dist[id],down=z+1<schoolScoreRows?dist[id+schoolScoreCols]:dist[id];let gx=(right<0?dist[id]:right)-(left<0?dist[id]:left),gz=(down<0?dist[id]:down)-(up<0?dist[id]:up);vx[id]=-gx;vz[id]=-gz;}
+ // Blend downhill contributions from all 8 neighboring cells.
+ // This produces continuous headings (not only N/E/S/W or fixed diagonals).
+ const around=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+ for(let z=0;z<schoolScoreRows;z++)for(let x=0;x<schoolScoreCols;x++){
+  const id=z*schoolScoreCols+x;if(dist[id]<=0)continue;
+  let gx=0,gz=0;
+  for(const [ox,oz] of around){const nx=x+ox,nz=z+oz;if(nx<0||nz<0||nx>=schoolScoreCols||nz>=schoolScoreRows)continue;
+   const nd=dist[nz*schoolScoreCols+nx];if(nd<0||nd>=dist[id])continue;
+   const drop=dist[id]-nd,weight=drop/(Math.hypot(ox,oz));
+   gx+=ox*weight;gz+=oz*weight;
+  }
+  if(Math.hypot(gx,gz)>1e-5){vx[id]=-gx;vz[id]=-gz;}
+ }
  return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,mapTileCount:generatedTiles.size,at:elapsed};
 }
 function scoreSteerTeacher(t,target,dt,speed){

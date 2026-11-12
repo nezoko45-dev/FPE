@@ -32,7 +32,7 @@ for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat);box(x+(i?2:
 const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fixture.position.set(x,2.85,z);scene.add(fixture);lights.push({fixture});
 }
 const generatedTiles=new Set();
-function addTile(x,z){const key=x+','+z;if(generatedTiles.has(key))return;generatedTiles.add(key);schoolTile(x,z)}
+function addTile(x,z){const key=x+','+z;if(generatedTiles.has(key))return;generatedTiles.add(key);schoolTile(x,z);schoolScoreMap=null;schoolFlowMapVersion++}
 for(let x=-30;x<=30;x+=10)for(let z=-30;z<=30;z+=10)addTile(x,z);
 // Each newly generated chunk (10x10 tile) gets its own collectible batch.
 const itemChunks=new Set();
@@ -80,7 +80,7 @@ const raycaster=new THREE.Raycaster();
 // Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
 // Continuous ground score: directly test world-space positions against desk boxes. No grid, cells, or cached tiles.
 // Cached school-wide ground score raster. Cell values: 1=open, 0=desk/blocked.
-const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolScoreObstacleCount=-1,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
+const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolScoreObstacleCount=-1,schoolFlowMapVersion=0,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
 function rebuildSchoolScoreMap(){
  // Cover every generated school tile (plus a 10m safety border), not a fixed-size patch.
  let minTX=0,maxTX=0,minTZ=0,maxTZ=0;
@@ -144,12 +144,12 @@ function buildTeacherFlowField(target){
    dist[ni]=dist[id]+1;vx[ni]=-dx;vz[ni]=-dz;queue[tail++]=ni;
   }
  }
- return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,at:elapsed};
+ return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,at:elapsed};
 }
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
  // Refresh the target-seeded field occasionally; movement itself only follows stored cell vectors.
- if(!ud.teacherFlow||elapsed-(ud.teacherFlowAt||0)>.45||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>1.25||schoolScoreObstacleCount!==obstacles.length){
+ if(!ud.teacherFlow||ud.teacherFlow.mapVersion!==schoolFlowMapVersion||elapsed-(ud.teacherFlowAt||0)>.45||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>1.25||schoolScoreObstacleCount!==obstacles.length){
   ud.teacherFlow=buildTeacherFlowField(goal);ud.teacherFlowAt=elapsed;
  }
  const f=ud.teacherFlow;if(!f)return false;

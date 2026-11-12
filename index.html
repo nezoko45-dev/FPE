@@ -152,7 +152,7 @@ function buildTeacherFlowField(target){
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
  // Refresh the target-seeded field occasionally; movement itself only follows stored cell vectors.
- if(!ud.teacherFlow||ud.teacherFlow.mapVersion!==schoolFlowMapVersion||elapsed-(ud.teacherFlowAt||0)>.45||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>1.25||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length){
+ if(!ud.teacherFlow||ud.teacherFlow.mapVersion!==schoolFlowMapVersion||elapsed-(ud.teacherFlowAt||0)>.18||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>.35||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length){
   ud.teacherFlow=buildTeacherFlowField(goal);ud.teacherFlowAt=elapsed;
  }
  const f=ud.teacherFlow;if(!f)return false;
@@ -212,7 +212,6 @@ function stepTeacher(t,dt){
  if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
- if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
  // Score all 360 headings; desks are 0, walls and all other ground are 1.
  scoreSteerTeacher(t,target,dt,t.speed*(nearest<1.7?.12:1));
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}

@@ -88,23 +88,21 @@ function teacherGroundScore(x,z){
 function buildTeacherBreadcrumbs(t,target){
  const p=t.root.position,route=[new THREE.Vector3(p.x,0,p.z)],goal=target.clone().setY(0),cur=route[0].clone(),step=.85,max=100;let lastAngle=t.root.rotation.y;
  for(let n=0;n<max&&cur.distanceTo(goal)>.9;n++){
-  const desired=Math.atan2(goal.x-cur.x,goal.z-cur.z);let best=null,bestScore=-Infinity;
+  let best=null,bestScore=-Infinity;
   for(let i=0;i<360;i+=3){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a),nx=cur.x+vx*step,nz=cur.z+vz*step;if(teacherGroundScore(nx,nz)!==1)continue;
    let clear=true;for(let k=1;k<=5;k++)if(teacherGroundScore(cur.x+vx*step*k/5,cur.z+vz*step*k/5)!==1){clear=false;break}if(!clear)continue;
    const dist=Math.hypot(goal.x-nx,goal.z-nz),turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));let revisit=false;
    for(let q=Math.max(0,route.length-8);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<.48){revisit=true;break}if(revisit)continue;
    const score=(cur.distanceTo(goal)-dist)*4-turn*.22;if(score>bestScore){bestScore=score;best={x:nx,z:nz,a}}
   }
-  if(!best)break;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());
-  if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
+  if(!best)break;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
  }
  t.coordRoute=route;t.coordWaypoint=1;t.coordTarget=goal.clone();t.coordRouteAt=elapsed;
 }
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0);
  if(!t.coordRoute||!t.coordTarget||t.coordTarget.distanceTo(goal)>2.2||t.coordWaypoint>=t.coordRoute.length-1||elapsed-(t.coordRouteAt||0)>2.5)buildTeacherBreadcrumbs(t,goal);
- let route=t.coordRoute||[],wi=t.coordWaypoint||1;
- while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;t.coordWaypoint=wi;let wp=route[wi];
+ let route=t.coordRoute||[],wi=t.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;t.coordWaypoint=wi;let wp=route[wi];
  if(!wp){buildTeacherBreadcrumbs(t,goal);route=t.coordRoute||[];wi=1;wp=route[wi];t.coordWaypoint=wi}if(!wp)return false;
  const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y));
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));const step=Math.min(len,speed*dt),nx=p.x+vx*step,nz=p.z+vz*step;

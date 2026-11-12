@@ -59,18 +59,22 @@ function navStep(pos,target,dt,speed,ray){const dir=target.clone().sub(pos).setY
 
 const raycaster=new THREE.Raycaster();
 // Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
-const teacherGroundScores=new Map();
-function teacherGroundScore(x,z){const step=1.5,gx=Math.round(x/step),gz=Math.round(z/step),key=gx+','+gz;if(teacherGroundScores.has(key))return teacherGroundScores.get(key);const px=gx*step,pz=gz*step;let score=1;for(const b of obstacles){if(px+.55>b.min.x&&px-.55<b.max.x&&pz+.55>b.min.z&&pz-.55<b.max.z){score=0;break}}teacherGroundScores.set(key,score);return score}
+// Continuous ground score: directly test world-space positions against desk boxes. No grid, cells, or cached tiles.
+function teacherGroundScore(x,z){
+ for(const box of obstacles){
+  if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z)return 0;
+ }
+ return 1;
+}
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,to=target.clone().sub(p).setY(0);if(to.lengthSq()<.01)return false;
  // Escape recovery: if spawned/pressed into a desk score-0 cell, seek nearby open score cells.
  if(teacherGroundScore(p.x,p.z)===0){
-  let escape=null,best=Infinity;
-  for(let ring=1;ring<=10&&!escape;ring++)for(let gx=-ring;gx<=ring;gx++)for(let gz=-ring;gz<=ring;gz++){
-   if(Math.max(Math.abs(gx),Math.abs(gz))!==ring)continue;
-   const x=Math.round(p.x/1.5)*1.5+gx*1.5,z=Math.round(p.z/1.5)*1.5+gz*1.5;
-   if(teacherGroundScore(x,z)!==1)continue;const d=(x-p.x)**2+(z-p.z)**2;
-   if(d<best){best=d;escape=new THREE.Vector3(x,0,z)}
+  let escape=null;
+  // Continuous radial probes, not grid/cell lookup.
+  for(let radius=.25;radius<=4&&!escape;radius+=.25)for(let i=0;i<72;i++){
+   const a=i*Math.PI/36,x=p.x+Math.sin(a)*radius,z=p.z+Math.cos(a)*radius;
+   if(teacherGroundScore(x,z)===1){escape=new THREE.Vector3(x,0,z);break}
   }
   if(escape){const dx=escape.x-p.x,dz=escape.z-p.z,len=Math.hypot(dx,dz)||1,step=Math.min(len,Math.max(.08,speed*dt));p.x+=dx/len*step;p.z+=dz/len*step;t.moveDir.set(dx/len,0,dz/len);t.root.rotation.y=Math.atan2(dx,dz);return true}
   // Last-resort drift: don't freeze if the cached score map has no nearby escape.

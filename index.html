@@ -127,7 +127,7 @@ function buildTeacherBreadcrumbs(t,target){
 
 function buildTeacherFlowField(target){
  // BFS runs only when generating the field. Every open cell stores a vector to its parent cell toward the target.
- if(!schoolScoreMap||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
  const count=schoolScoreCols*schoolScoreRows,dist=new Int32Array(count);dist.fill(-1);
  const vx=new Float32Array(count),vz=new Float32Array(count),queue=new Int32Array(count);
  let tx=Math.floor((target.x-schoolScoreMinX)/SCHOOL_SCORE_CELL),tz=Math.floor((target.z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);
@@ -144,7 +144,7 @@ function buildTeacherFlowField(target){
    dist[ni]=dist[id]+1;vx[ni]=-dx;vz[ni]=-dz;queue[tail++]=ni;
   }
  }
- return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,at:elapsed};
+ return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,mapVersion:schoolFlowMapVersion,mapTileCount:generatedTiles.size,at:elapsed};
 }
 function scoreSteerTeacher(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
@@ -249,7 +249,7 @@ for(const s of survivors){
   if(toItem.length()<.85){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null;flowVizAt=elapsed-.36}
   else{
    const ud=s.root.userData,goal=target.mesh.position;
-   if(!ud.collectFlow||ud.collectItem!==target||elapsed-(ud.collectFlowAt||0)>.5||Math.hypot(goal.x-ud.collectFlow.targetX,goal.z-ud.collectFlow.targetZ)>1.25||schoolScoreObstacleCount!==obstacles.length){
+   if(!ud.collectFlow||ud.collectFlow.mapVersion!==schoolFlowMapVersion||ud.collectFlow.mapTileCount!==generatedTiles.size||ud.collectItem!==target||elapsed-(ud.collectFlowAt||0)>.5||Math.hypot(goal.x-ud.collectFlow.targetX,goal.z-ud.collectFlow.targetZ)>1.25||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length){
     ud.collectFlow=buildTeacherFlowField(goal);ud.collectFlowAt=elapsed;ud.collectItem=target;
    }
    const f=ud.collectFlow,p=s.root.position;

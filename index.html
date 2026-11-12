@@ -233,7 +233,8 @@ function stepTeacher(t,dt){
  if(target!==player.pos){const s=survivors.find(a=>a.root.position===target&&!a.dead);if(s)target=s.root.position;else{ud.chaseUntil=0;target=player.pos;ud.chaseTarget=target}}
  nearest=p.distanceTo(target);
  // Flowfield arrows track the locked target's moving position for the full 11 seconds.
- scoreSteerTeacher(t,target,dt,t.speed*(nearest<1.7?.12:1));
+ // Movement is exclusively the sampled flowfield vector; target distance never steers or slows locomotion.
+ scoreSteerTeacher(t,target,dt,t.speed);
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
  if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
 }

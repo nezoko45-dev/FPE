@@ -110,17 +110,27 @@ function scoreSteerTeacher(t,target,dt,speed){
  t.coordRoute=null;t.coordWaypoint=1;buildTeacherBreadcrumbs(t,goal);return false
 }
 function buildCoordinateTrail(agent,target){
- const p=agent.root.position,route=[new THREE.Vector3(p.x,0,p.z)],goal=target.clone().setY(0),cur=route[0].clone(),step=.85,max=100;let lastAngle=agent.root.rotation.y+(agent.coordBias||0);
- for(let n=0;n<max&&cur.distanceTo(goal)>.9;n++){
-  let best=null,bestScore=-Infinity;
-  for(let i=0;i<360;i+=3){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a),nx=cur.x+vx*step,nz=cur.z+vz*step;if(teacherGroundScore(nx,nz)!==1)continue;
-   let clear=true;for(let k=1;k<=5;k++)if(teacherGroundScore(cur.x+vx*step*k/5,cur.z+vz*step*k/5)!==1){clear=false;break}if(!clear)continue;
-   const dist=Math.hypot(goal.x-nx,goal.z-nz),turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));let revisit=false;
-   for(let q=Math.max(0,route.length-8);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<.48){revisit=true;break}if(revisit)continue;
-   const score=(cur.distanceTo(goal)-dist)*4-turn*.22;if(score>bestScore){bestScore=score;best={x:nx,z:nz,a}}
+ const p=agent.root.position,goal=target.clone().setY(0),route=[new THREE.Vector3(p.x,0,p.z)];
+ const spacing=.65,limit=38,originX=p.x,originZ=p.z;
+ const key=(x,z)=>x+","+z,world=(x,z)=>new THREE.Vector3(originX+x*spacing,0,originZ+z*spacing);
+ const sx=0,sz=0,gx=Math.round((goal.x-originX)/spacing),gz=Math.round((goal.z-originZ)/spacing);
+ const open=[],nodes=new Map(),dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+ function push(n){open.push(n);let i=open.length-1;while(i>0){let par=(i-1)>>1;if(open[par].f<=n.f)break;open[i]=open[par];i=par}open[i]=n}
+ function pop(){const top=open[0],last=open.pop();if(open.length){let i=0;while(true){let l=i*2+1,r=l+1;if(l>=open.length)break;let m=r<open.length&&open[r].f<open[l].f?r:l;if(open[m].f>=last.f)break;open[i]=open[m];i=m}open[i]=last}return top}
+ const first={x:sx,z:sz,g:0,f:Math.hypot(gx,gz),parent:null};nodes.set(key(sx,sz),first);push(first);let found=null,iterations=0;
+ while(open.length&&iterations++<9000){
+  const cur=pop();if(cur.closed)continue;cur.closed=true;
+  if(cur.x===gx&&cur.z===gz){found=cur;break}
+  for(const [dx,dz] of dirs){const x=cur.x+dx,z=cur.z+dz;if(Math.abs(x)>limit||Math.abs(z)>limit)continue;
+   const a=world(cur.x,cur.z),b=world(x,z);if(teacherGroundScore(b.x,b.z)!==1)continue;
+   let clear=true;for(let k=1;k<=4;k++){const q=a.clone().lerp(b,k/4);if(teacherGroundScore(q.x,q.z)!==1){clear=false;break}}if(!clear)continue;
+   const nk=key(x,z),ng=cur.g+(dx&&dz?1.414:1),old=nodes.get(nk);if(old&&old.g<=ng)continue;
+   const n={x,z,g:ng,f:ng+Math.hypot(gx-x,gz-z),parent:cur};nodes.set(nk,n);push(n)
   }
-  if(!best)break;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
  }
+ if(found){const rev=[];for(let n=found;n&&n.parent;n=n.parent)rev.push(world(n.x,n.z));rev.reverse();route.push(...rev)}
+ // Add the exact collectable position only if its approach point is open.
+ if(teacherGroundScore(goal.x,goal.z)===1)route.push(goal.clone());
  agent.coordRoute=route;agent.coordWaypoint=1;agent.coordTarget=goal.clone();agent.coordRouteAt=elapsed;
 }
 function followCoordinateTrail(agent,target,dt,speed){

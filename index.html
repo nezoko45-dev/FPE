@@ -110,23 +110,25 @@ function scoreSteerTeacher(t,target,dt,speed){
  t.coordRoute=null;t.coordWaypoint=1;buildTeacherBreadcrumbs(t,goal);return false
 }
 function buildCoordinateTrail(agent,target){
- // Sequential ground-score breadcrumbs: grow one coordinate at a time, bending around blocked objects.
+ // Sequential breadcrumbs with obstacle detours: permit sideways/backward steps when direct progress is blocked.
  const p=agent.root.position,goal=target.clone().setY(0),route=[new THREE.Vector3(p.x,0,p.z)],cur=route[0].clone();
- const step=.65,max=180;let lastAngle=agent.root.rotation.y,stalled=0;
- for(let n=0;n<max&&cur.distanceTo(goal)>.7;n++){
-  let best=null,bestScore=-Infinity;
-  // Sweep all headings; open ground only, and sample the segment so breadcrumbs don't cut corners through desks.
+ const step=.55,max=240;let lastAngle=agent.root.rotation.y,detour=0;
+ const clearSegment=(x,z,nx,nz)=>{for(let k=1;k<=8;k++)if(teacherGroundScore(x+(nx-x)*k/8,z+(nz-z)*k/8)!==1)return false;return true};
+ for(let n=0;n<max&&cur.distanceTo(goal)>.65;n++){
+  const before=cur.distanceTo(goal);let best=null,bestScore=-Infinity;
   for(let i=0;i<360;i+=2){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a),nx=cur.x+vx*step,nz=cur.z+vz*step;
-   if(teacherGroundScore(nx,nz)!==1)continue;
-   let clear=true;for(let k=1;k<=6;k++)if(teacherGroundScore(cur.x+vx*step*k/6,cur.z+vz*step*k/6)!==1){clear=false;break}if(!clear)continue;
-   const before=Math.hypot(goal.x-cur.x,goal.z-cur.z),after=Math.hypot(goal.x-nx,goal.z-nz);
-   let revisit=false;for(let q=Math.max(0,route.length-14);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<step*.7){revisit=true;break}if(revisit)continue;
+   if(teacherGroundScore(nx,nz)!==1||!clearSegment(cur.x,cur.z,nx,nz))continue;
+   let revisit=false;for(let q=Math.max(0,route.length-22);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<step*.72){revisit=true;break}if(revisit)continue;
+   const after=Math.hypot(goal.x-nx,goal.z-nz),progress=before-after;
    const turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));
-   const score=(before-after)*5-turn*.16;
-   if(score>bestScore){bestScore=score;best={x:nx,z:nz,a,progress:before-after}}
+   // Goal alignment is secondary: when blocked, side-step around the obstacle rather than stopping.
+   const score=progress*4+Math.cos(a-Math.atan2(goal.x-cur.x,goal.z-cur.z))*.22-turn*.10;
+   if(score>bestScore){bestScore=score;best={x:nx,z:nz,a,progress}}
   }
-  if(!best||best.progress<.015){stalled++;if(stalled>1)break;lastAngle+=Math.PI/2;continue}
-  stalled=0;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());
+  if(!best)break;
+  // If no meaningful progress is available, accept a bounded detour step; avoid revisiting recent coordinates.
+  if(best.progress<.015){detour++;if(detour>34)break}else detour=0;
+  cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());
   if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
  }
  agent.coordRoute=route;agent.coordWaypoint=1;agent.coordTarget=goal.clone();agent.coordRouteAt=elapsed;
@@ -137,7 +139,7 @@ function followCoordinateTrail(agent,target,dt,speed){
  if(!agent.coordLastPos){agent.coordLastPos=p.clone();agent.coordMovedAt=elapsed}
  if(Math.hypot(p.x-agent.coordLastPos.x,p.z-agent.coordLastPos.z)>.12){agent.coordLastPos.copy(p);agent.coordMovedAt=elapsed;agent.coordBias=0}
  else if(elapsed-(agent.coordMovedAt||0)>1.1){agent.coordBias=(agent.coordBias||0)+Math.PI/4;agent.coordRoute=null;agent.coordWaypoint=1;agent.coordMovedAt=elapsed;agent.coordLastPos.copy(p)}
- if(!agent.coordRoute||!agent.coordTarget||agent.coordTarget.distanceTo(goal)>2.2||agent.coordWaypoint>=agent.coordRoute.length-1||elapsed-(agent.coordRouteAt||0)>2.5)buildCoordinateTrail(agent,goal);
+ if(!agent.coordRoute||agent.coordRoute.length<4||!agent.coordTarget||agent.coordTarget.distanceTo(goal)>2.2||agent.coordWaypoint>=agent.coordRoute.length-1||elapsed-(agent.coordRouteAt||0)>2.5)buildCoordinateTrail(agent,goal);
  let route=agent.coordRoute||[],wi=agent.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;agent.coordWaypoint=wi;let wp=route[wi];
  if(!wp){buildCoordinateTrail(agent,goal);route=agent.coordRoute||[];wi=1;wp=route[wi];agent.coordWaypoint=wi}if(!wp)return false;
  const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-agent.root.rotation.y),Math.cos(angle-agent.root.rotation.y));

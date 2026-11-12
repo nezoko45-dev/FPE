@@ -180,15 +180,21 @@ function buildTeacherWaypoints(t,target){
  return [new THREE.Vector3(p.x,0,p.z),new THREE.Vector3(best.x,0,best.z),goal];
 }
 function steerTeacherWaypoints(t,target,dt,speed){
- const p=t.root.position,ud=t.root.userData,goal=target.clone().setY(0);
- // Directly pursue the target if unobstructed; create a BFS waypoint route only when blocked.
+ const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
+ // Direct chase first. Only use an immediately visible waypoint block when furniture blocks the target.
  if(teacherSegmentClear(p.x,p.z,goal.x,goal.z)){ud.teacherWaypoints=null;ud.teacherWaypoint=0;return moveTeacherToward(t,goal,dt,speed)}
- if(!ud.teacherWaypoints||elapsed-(ud.teacherRouteAt||0)>.4||Math.hypot(goal.x-(ud.teacherRouteTargetX||0),goal.z-(ud.teacherRouteTargetZ||0))>1.2||ud.teacherWaypoints.mapVersion!==schoolFlowMapVersion){
-  ud.teacherWaypoints=buildTeacherWaypoints(t,goal);ud.teacherWaypoint=1;ud.teacherRouteAt=elapsed;ud.teacherRouteTargetX=goal.x;ud.teacherRouteTargetZ=goal.z;ud.teacherWaypoints.mapVersion=schoolFlowMapVersion
+ let block=null,best=Infinity;const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz)||1,ux=dx/dist,uz=dz/dist;
+ const stride=Math.max(1,Math.floor(schoolWaypointNodes.length/18000));
+ for(let k=0;k<schoolWaypointNodes.length;k+=stride){
+  const id=schoolWaypointNodes[k],x=schoolScoreMinX+(id%schoolScoreCols+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(((id/schoolScoreCols)|0)+.5)*SCHOOL_SCORE_CELL;
+  const wx=x-p.x,wz=z-p.z,d=Math.hypot(wx,wz);if(d<.55||d>5||!teacherSegmentClear(p.x,p.z,x,z))continue;
+  const alignment=(wx*ux+wz*uz)/d,progress=dist-Math.hypot(goal.x-x,goal.z-z);if(alignment<-.15||progress<-.35)continue;
+  const score=d+Math.max(0,-progress)*2-alignment*1.8;if(score<best){best=score;block={x,z}}
  }
- const route=ud.teacherWaypoints;if(!route||route.length<2)return moveTeacherToward(t,goal,dt,speed);
- while(ud.teacherWaypoint<route.length-1&&Math.hypot(route[ud.teacherWaypoint].x-p.x,route[ud.teacherWaypoint].z-p.z)<.45)ud.teacherWaypoint++;
- const waypoint=route[Math.min(ud.teacherWaypoint,route.length-1)];return moveTeacherToward(t,waypoint,dt,speed)
+ if(block)return moveTeacherToward(t,block,dt,speed);
+ // No clear block in front: safely sidestep locally rather than invoking a route planner.
+ const angle=Math.atan2(dx,dz);for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4,vx=Math.sin(a),vz=Math.cos(a),nx=p.x+vx*speed*dt,nz=p.z+vz*speed*dt;if(teacherGroundScore(nx,nz)===1&&teacherSegmentClear(p.x,p.z,nx,nz)){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);t.root.rotation.y=a;return true}}
+ return false;
 }
 function moveTeacherToward(t,point,dt,speed){
  const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);if(dist<.06)return true;

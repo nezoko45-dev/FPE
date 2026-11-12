@@ -61,9 +61,27 @@ const raycaster=new THREE.Raycaster();
 // Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
 const teacherGroundScores=new Map();
 function teacherGroundScore(x,z){const step=1.5,gx=Math.round(x/step),gz=Math.round(z/step),key=gx+','+gz;if(teacherGroundScores.has(key))return teacherGroundScores.get(key);const px=gx*step,pz=gz*step;let score=1;for(const b of obstacles){if(px+.55>b.min.x&&px-.55<b.max.x&&pz+.55>b.min.z&&pz-.55<b.max.z){score=0;break}}teacherGroundScores.set(key,score);return score}
-function scoreSteerTeacher(t,target,dt,speed){const p=t.root.position,to=target.clone().sub(p).setY(0);if(to.lengthSq()<.01)return false;const desired=Math.atan2(to.x,to.z);let best=desired,bestScore=-Infinity,found=false;
-for(let i=0;i<360;i++){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a);let open=0,blocked=0,firstBlocked=99;for(let n=1;n<=6;n++){const s=teacherGroundScore(p.x+vx*n*1.5,p.z+vz*n*1.5);if(s===1)open++;else{blocked++;firstBlocked=Math.min(firstBlocked,n)}}const targetBias=(Math.cos(a-desired)+1)*.5,turnBias=(Math.cos(a-t.root.rotation.y)+1)*.5;const score=open*2.2-blocked*6+targetBias*2.4+turnBias*.9+firstBlocked*.1;if(firstBlocked>1&&score>bestScore){bestScore=score;best=a;found=true}}
-if(!found)return false;const delta=Math.atan2(Math.sin(best-t.root.rotation.y),Math.cos(best-t.root.rotation.y));t.root.rotation.y+=Math.max(-dt*4,Math.min(dt*4,delta));const heading=t.root.rotation.y,vx=Math.sin(heading),vz=Math.cos(heading),step=speed*dt,nx=p.x+vx*step,nz=p.z+vz*step;if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}return false}
+function scoreSteerTeacher(t,target,dt,speed){
+ const p=t.root.position,to=target.clone().sub(p).setY(0);if(to.lengthSq()<.01)return false;
+ const desired=Math.atan2(to.x,to.z),candidates=[];
+ for(let i=0;i<360;i++){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a);let open=0,blocked=0,firstBlocked=99;
+ for(let n=1;n<=6;n++){const s=teacherGroundScore(p.x+vx*n*1.5,p.z+vz*n*1.5);if(s===1)open++;else{blocked++;firstBlocked=Math.min(firstBlocked,n)}}
+ const targetBias=(Math.cos(a-desired)+1)*.5,turnBias=(Math.cos(a-t.root.rotation.y)+1)*.5;
+ const score=open*2.2-blocked*6+targetBias*2.4+turnBias*.9+firstBlocked*.1;
+ if(teacherGroundScore(p.x+vx*.45,p.z+vz*.45)===1)candidates.push({a,score})}
+ if(!candidates.length)return false;candidates.sort((a,b)=>b.score-a.score);
+ // Try scored headings in rank order; a blocked forward tile cannot freeze the teacher.
+ let selected=candidates[0].a,moveAngle=null;
+ for(const c of candidates.slice(0,36)){const vx=Math.sin(c.a),vz=Math.cos(c.a);let clear=true;for(let k=1;k<=4;k++){if(teacherGroundScore(p.x+vx*speed*dt*k/4,p.z+vz*speed*dt*k/4)===0){clear=false;break}}if(clear){selected=c.a;moveAngle=c.a;break}}
+ const delta=Math.atan2(Math.sin(selected-t.root.rotation.y),Math.cos(selected-t.root.rotation.y));t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,delta));
+ // Move on the best viable scored direction, while rotation eases toward it.
+ if(moveAngle===null)moveAngle=selected;
+ const vx=Math.sin(moveAngle),vz=Math.cos(moveAngle),step=speed*dt,nx=p.x+vx*step,nz=p.z+vz*step;
+ if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
+ // If a desk edge blocks the exact step, slide along its open tangent.
+ for(const side of [-1,1]){const a=moveAngle+side*Math.PI/2,sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*step,z=p.z+sz*step;if(teacherGroundScore(x,z)===1){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
+ return false
+}
 function stepTeacher(t,dt){
  const p=t.root.position;
  if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}

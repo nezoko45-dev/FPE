@@ -84,14 +84,17 @@ function scoreSteerTeacher(t,target,dt,speed){
  // Score continuous world-space probes densely: corridor clearance + actual progress toward target.
  for(let i=0;i<360;i++){
   const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a);let clearDist=0,blockedAt=99;
-  for(let d=.35;d<=5.6;d+=.35){
-   if(teacherGroundScore(p.x+vx*d,p.z+vz*d)===0){blockedAt=d;break}
-   clearDist=d;
+  // Fan-score several distances: reward MANY open (1) samples, not merely the first clear point.
+  let openSamples=0,zeroSamples=0;
+  for(const d of [.35,.7,1.05,1.4,1.8,2.3,2.9,3.6,4.4,5.2,5.8]){
+   if(teacherGroundScore(p.x+vx*d,p.z+vz*d)===1)openSamples++;
+   else {zeroSamples++;if(blockedAt===99)blockedAt=d;}
   }
-  const progress=Math.max(-5.6,Math.min(5.6,to.x*vx+to.z*vz));
+  clearDist=blockedAt===99?5.8:Math.max(0,blockedAt-.35);
+  const progress=Math.max(-5.8,Math.min(5.8,to.x*vx+to.z*vz));
   const targetBias=(Math.cos(a-desired)+1)*.5,turnBias=(Math.cos(a-t.root.rotation.y)+1)*.5;
-  // Prefer open corridors and headings that close target distance; penalize desk edges early.
-  const score=clearDist*2.1+progress*1.8+targetBias*1.1+turnBias*.35-Math.max(0,5.6-blockedAt)*1.4;
+  // Multi-point open-score fan: prefer routes with many 1s and fewer desk 0s.
+  const score=openSamples*2.35-zeroSamples*2.8+clearDist*1.25+progress*1.65+targetBias*.9+turnBias*.2;
   if(teacherGroundScore(p.x+vx*.18,p.z+vz*.18)===1)candidates.push({a,score,clearDist,progress})
  }
  if(!candidates.length)return false;candidates.sort((a,b)=>b.score-a.score);

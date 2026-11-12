@@ -246,7 +246,7 @@ for(const s of survivors){
  let target=null,best=Infinity;for(const it of items){const d=it.mesh.position.distanceTo(s.root.position);if(d<best&&d<24){best=d;target=it}}
  if(target){
   const toItem=target.mesh.position.clone().sub(s.root.position).setY(0);
-  if(toItem.length()<.85){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;s.target=null;s.root.userData.collectFlow=null}
+  if(toItem.length()<.85){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null;flowVizAt=elapsed-.36}
   else{
    const ud=s.root.userData,goal=target.mesh.position;
    if(!ud.collectFlow||ud.collectItem!==target||elapsed-(ud.collectFlowAt||0)>.5||Math.hypot(goal.x-ud.collectFlow.targetX,goal.z-ud.collectFlow.targetZ)>1.25||schoolScoreObstacleCount!==obstacles.length){
@@ -264,7 +264,7 @@ for(const s of survivors){
  }else{s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null}
  s.phase+=dt*5;const swing=Math.sin(s.phase)*.55;s.legs[0].rotation.x=swing;s.legs[1].rotation.x=-swing;s.arms[0].rotation.x=-swing*.7;s.arms[1].rotation.x=swing*.7;s.root.position.y=Math.abs(Math.sin(s.phase))*.045
 }
-for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flowVizAt>.35){drawFlowGizmos();flowVizAt=elapsed}
+for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flowVizAt>.12){drawFlowGizmos();flowVizAt=elapsed}
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 

@@ -58,31 +58,20 @@ function nearbyRayMeshes(pos,radius=12){const r2=radius*radius;return rayMeshes.
 function navStep(pos,target,dt,speed,ray){const dir=target.clone().sub(pos).setY(0);if(dir.lengthSq()<.04)return false;dir.normalize();const nearby=nearbyRayMeshes(pos,6);const origin=pos.clone().add(new THREE.Vector3(0,.8,0));ray.set(origin,dir);ray.far=2.1;const blocked=ray.intersectObjects(nearby,false).length>0;let move=dir;if(blocked){const left=new THREE.Vector3(-dir.z,0,dir.x),right=left.clone().negate(),clear=v=>{ray.set(origin,v);ray.far=2;return !ray.intersectObjects(nearby,false).length};move=clear(left)?left:clear(right)?right:dir.clone().negate()}const q=pos.clone().add(move.multiplyScalar(speed*dt));if(!collides(q)){pos.copy(q);return true}for(const v of [new THREE.Vector3(-dir.z,0,dir.x),new THREE.Vector3(dir.z,0,-dir.x)]){const side=pos.clone().add(v.multiplyScalar(speed*dt));if(!collides(side)){pos.copy(side);return true}}return false}
 
 const raycaster=new THREE.Raycaster();
+// Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
+const teacherGroundScores=new Map();
+function teacherGroundScore(x,z){const step=1.5,gx=Math.round(x/step),gz=Math.round(z/step),key=gx+','+gz;if(teacherGroundScores.has(key))return teacherGroundScores.get(key);const px=gx*step,pz=gz*step;let score=1;for(const b of obstacles){if(px+.55>b.min.x&&px-.55<b.max.x&&pz+.55>b.min.z&&pz-.55<b.max.z){score=0;break}}teacherGroundScores.set(key,score);return score}
+function scoreSteerTeacher(t,target,dt,speed){const p=t.root.position,to=target.clone().sub(p).setY(0);if(to.lengthSq()<.01)return false;const desired=Math.atan2(to.x,to.z);let best=desired,bestScore=-Infinity,found=false;
+for(let i=0;i<360;i++){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a);let open=0,blocked=0,firstBlocked=99;for(let n=1;n<=6;n++){const s=teacherGroundScore(p.x+vx*n*1.5,p.z+vz*n*1.5);if(s===1)open++;else{blocked++;firstBlocked=Math.min(firstBlocked,n)}}const targetBias=(Math.cos(a-desired)+1)*.5,turnBias=(Math.cos(a-t.root.rotation.y)+1)*.5;const score=open*2.2-blocked*6+targetBias*2.4+turnBias*.9+firstBlocked*.1;if(firstBlocked>1&&score>bestScore){bestScore=score;best=a;found=true}}
+if(!found)return false;const delta=Math.atan2(Math.sin(best-t.root.rotation.y),Math.cos(best-t.root.rotation.y));t.root.rotation.y+=Math.max(-dt*4,Math.min(dt*4,delta));const heading=t.root.rotation.y,vx=Math.sin(heading),vz=Math.cos(heading),step=speed*dt,nx=p.x+vx*step,nz=p.z+vz*step;if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}return false}
 function stepTeacher(t,dt){
  const p=t.root.position;
- if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){navStep(p,t.home,dt,t.speed,t.ray);t.rayAnchors=[];t.root.rotation.y=Math.atan2(home.x,home.z);if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  let target=player.pos,nearest=p.distanceTo(player.pos);for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<nearest){nearest=d;target=s.root.position}}
  if(nearest>42){target=t.home;nearest=p.distanceTo(target)}
- const origin=p.clone().add(new THREE.Vector3(0,.9,0)),near=nearbyRayMeshes(p,12);
- // Directional steering is local; ray endpoints reseed around the teacher after each movement.
- const force=new THREE.Vector3(),toTarget=target.clone().sub(p).setY(0),targetDir=toTarget.lengthSq()>.01?toTarget.normalize():new THREE.Vector3();
- let bestClear=null,bestScore=-Infinity;
- for(let i=0;i<16;i++){
-  const heading=t.root.rotation.y+i*Math.PI*2/16,direction=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
-  t.ray.set(origin,direction);t.ray.far=7;
-  const hit=t.ray.intersectObjects(near,false)[0],clearance=hit?hit.distance:7;
-  if(hit){force.addScaledVector(direction,-Math.max(0,2.2-clearance)*.8);continue}
-  const score=direction.dot(targetDir)+.12*(clearance/7);
-  if(score>bestScore){bestScore=score;bestClear=direction}
- }
- if(bestClear)force.addScaledVector(bestClear,1.1);
- force.addScaledVector(targetDir,.9);
- if(force.lengthSq()<.025){if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
- const chosen=force.normalize();t.moveDir.copy(chosen);
- const speed=t.speed*(nearest<1.7?.12:1),move=chosen.clone(),next=p.clone().add(move.multiplyScalar(speed*dt));
- if(!collides(next)){p.copy(next);t.rayAnchors=[]}else t.moveDir.multiplyScalar(.15);
- const yaw=Math.atan2(move.x,move.z);t.root.rotation.y+=Math.atan2(Math.sin(yaw-t.root.rotation.y),Math.cos(yaw-t.root.rotation.y))*Math.min(1,dt*7);
+ // Score all 360 headings; desks are 0, walls and all other ground are 1.
+ scoreSteerTeacher(t,target,dt,t.speed*(nearest<1.7?.12:1));
  const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
  if(nearest<1.7&&elapsed-t.attackAt>1.8){t.attackAt=elapsed;if(elapsed-t.lastDamageAt>=3){t.lastDamageAt=elapsed;if(!dead&&target===player.pos){hp=Math.max(0,hp-35);if(hp===0){dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='YOU WERE CAUGHT — respawning in 5 seconds'}}else{const s=survivors.find(a=>a.root.position===target);if(s){s.hp-=35;if(s.hp<=0){s.dead=true;s.respawn=elapsed+8;s.root.visible=false}}}}}
 }

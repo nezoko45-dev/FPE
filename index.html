@@ -298,7 +298,7 @@ for(const s of survivors){
    }
    const f=ud.collectFlow,p=s.root.position;
    if(f){
-    const goal=goalPosition(target),ud=s.root.userData;
+    const goal=target.mesh.position,ud=s.root.userData;
     // If furniture blocks the straight collectible path, route the survivor through the shared waypoint blocks.
     if(!teacherSegmentClear(p.x,p.z,goal.x,goal.z)){
      if(!ud.collectWaypoints||ud.collectWaypointItem!==target||elapsed-(ud.collectWaypointAt||0)>.4||Math.hypot(goal.x-(ud.collectWaypointX||0),goal.z-(ud.collectWaypointZ||0))>1.2){

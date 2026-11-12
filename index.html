@@ -109,6 +109,30 @@ function scoreSteerTeacher(t,target,dt,speed){
  if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
  t.coordRoute=null;t.coordWaypoint=1;buildTeacherBreadcrumbs(t,goal);return false
 }
+function buildCoordinateTrail(agent,target){
+ const p=agenagent.root.position,route=[new THREE.Vector3(p.x,0,p.z)],goal=target.clone().setY(0),cur=route[0].clone(),step=.85,max=100;let lastAngle=agenagent.root.rotation.y;
+ for(let n=0;n<max&&cur.distanceTo(goal)>.9;n++){
+  let best=null,bestScore=-Infinity;
+  for(let i=0;i<360;i+=3){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a),nx=cur.x+vx*step,nz=cur.z+vz*step;if(teacherGroundScore(nx,nz)!==1)continue;
+   let clear=true;for(let k=1;k<=5;k++)if(teacherGroundScore(cur.x+vx*step*k/5,cur.z+vz*step*k/5)!==1){clear=false;break}if(!clear)continue;
+   const dist=Math.hypot(goal.x-nx,goal.z-nz),turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));let revisit=false;
+   for(let q=Math.max(0,route.length-8);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<.48){revisit=true;break}if(revisit)continue;
+   const score=(cur.distanceTo(goal)-dist)*4-turn*.22;if(score>bestScore){bestScore=score;best={x:nx,z:nz,a}}
+  }
+  if(!best)break;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
+ }
+ agenagent.coordRoute=route;agenagent.coordWaypoint=1;agenagent.coordTarget=goal.clone();agenagenagenagent.coordRouteAt=elapsed;
+}
+function followCoordinateTrail(agent,target,dt,speed){
+ const p=agenagent.root.position,goal=target.clone().setY(0);
+ if(!agenagent.coordRoute||!agenagent.coordTarget||agenagent.coordTarget.distanceTo(goal)>2.2||agenagent.coordWaypoint>=agenagent.coordRoute.length-1||elapsed-(agenagenagenagent.coordRouteAt||0)>2.5)buildCoordinateTrail(agent,goal);
+ let route=agenagent.coordRoute||[],wi=agenagent.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;agenagent.coordWaypoint=wi;let wp=route[wi];
+ if(!wp){buildCoordinateTrail(agent,goal);route=agenagent.coordRoute||[];wi=1;wp=route[wi];agenagent.coordWaypoint=wi}if(!wp)return false;
+ const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-agenagent.root.rotation.y),Math.cos(angle-agenagent.root.rotation.y));
+ agenagent.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));const step=Math.min(len,speed*dt),nx=p.x+vx*step,nz=p.z+vz*step;
+ if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;agenagent.moveDir.set(vx,0,vz);return true}
+ agenagent.coordRoute=null;agenagent.coordWaypoint=1;buildCoordinateTrail(agent,goal);return false
+}
 function stepTeacher(t,dt){
  const p=t.root.position;
  if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
@@ -152,7 +176,7 @@ for(const s of survivors){
  if(target){
   const toItem=target.mesh.position.clone().sub(s.root.position).setY(0);
   if(toItem.length()<.85){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;s.target=null}
-  else{scoreSteerTeacher(s,target.mesh.position,dt,2.4);s.target=target}
+  else{followCoordinateTrail(s,target.mesh.position,dt,2.4);s.target=target}
  }else{s.target=null}
  s.phase+=dt*5;const swing=Math.sin(s.phase)*.55;s.legs[0].rotation.x=swing;s.legs[1].rotation.x=-swing;s.arms[0].rotation.x=-swing*.7;s.arms[1].rotation.x=swing*.7;s.root.position.y=Math.abs(Math.sin(s.phase))*.045
 }

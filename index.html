@@ -119,24 +119,47 @@ function buildTeacherBreadcrumbs(t,target){
  t.coordRoute=route;t.coordWaypoint=1;t.coordTarget=goal.clone();t.coordRouteAt=elapsed;
 }
 
-function scoreSteerTeacher(t,target,dt,speed){
- const p=t.root.position,goal=target.clone().setY(0),dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.2)return false;
- const goalAngle=Math.atan2(dx,dz);let bestAngle=t.root.rotation.y,best=-Infinity;
- // Sample the cached ground-score map in 48 directions; score open forward space + target alignment.
- for(let i=0;i<48;i++){const a=i*Math.PI/24,vx=Math.sin(a),vz=Math.cos(a);let score=0,blocked=false;
-  for(let k=1;k<=8;k++){const d=k*.38,val=schoolScoreAt(p.x+vx*d,p.z+vz*d);if(!val){blocked=true;break}score+=1}
-  if(blocked)score-=8;
-  score+=Math.cos(a-goalAngle)*5;
-  score-=Math.abs(Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y)))*.18;
-  if(score>best){best=score;bestAngle=a}
+function buildTeacherFlowField(target){
+ // BFS runs only when generating the field. Every open cell stores a vector to its parent cell toward the target.
+ if(!schoolScoreMap||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ const count=schoolScoreCols*schoolScoreRows,dist=new Int32Array(count);dist.fill(-1);
+ const vx=new Float32Array(count),vz=new Float32Array(count),queue=new Int32Array(count);
+ let tx=Math.floor((target.x-schoolScoreMinX)/SCHOOL_SCORE_CELL),tz=Math.floor((target.z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);
+ tx=Math.max(0,Math.min(schoolScoreCols-1,tx));tz=Math.max(0,Math.min(schoolScoreRows-1,tz));
+ let seed=tz*schoolScoreCols+tx;
+ if(!schoolScoreMap[seed]){
+  let found=-1;for(let r=1;r<24&&found<0;r++)for(let dz=-r;dz<=r&&found<0;dz++)for(let dx=-r;dx<=r;dx++){const x=tx+dx,z=tz+dz;if(x<0||z<0||x>=schoolScoreCols||z>=schoolScoreRows)continue;const id=z*schoolScoreCols+x;if(schoolScoreMap[id]){found=id;break}}
+  if(found<0)return null;seed=found;
  }
- const vx=Math.sin(bestAngle),vz=Math.cos(bestAngle),nx=p.x+vx*speed*dt,nz=p.z+vz*speed*dt;
- t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(bestAngle-t.root.rotation.y),Math.cos(bestAngle-t.root.rotation.y))));
- if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
+ let head=0,tail=0;queue[tail++]=seed;dist[seed]=0;
+ const dirs=[[-1,0],[1,0],[0,-1],[0,1]];
+ while(head<tail){const id=queue[head++],x=id%schoolScoreCols,z=(id/schoolScoreCols)|0;
+  for(const [dx,dz] of dirs){const nx=x+dx,nz=z+dz;if(nx<0||nz<0||nx>=schoolScoreCols||nz>=schoolScoreRows)continue;const ni=nz*schoolScoreCols+nx;if(!schoolScoreMap[ni]||dist[ni]>=0)continue;
+   dist[ni]=dist[id]+1;vx[ni]=-dx;vz[ni]=-dz;queue[tail++]=ni;
+  }
+ }
+ return {dist,vx,vz,cols:schoolScoreCols,rows:schoolScoreRows,minX:schoolScoreMinX,minZ:schoolScoreMinZ,cell:SCHOOL_SCORE_CELL,targetX:target.x,targetZ:target.z,at:elapsed};
+}
+function scoreSteerTeacher(t,target,dt,speed){
+ const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
+ // Refresh the target-seeded field occasionally; movement itself only follows stored cell vectors.
+ if(!ud.teacherFlow||elapsed-(ud.teacherFlowAt||0)>.45||Math.hypot(goal.x-ud.teacherFlow.targetX,goal.z-ud.teacherFlow.targetZ)>1.25||schoolScoreObstacleCount!==obstacles.length){
+  ud.teacherFlow=buildTeacherFlowField(goal);ud.teacherFlowAt=elapsed;
+ }
+ const f=ud.teacherFlow;if(!f)return false;
+ const ix=Math.floor((p.x-f.minX)/f.cell),iz=Math.floor((p.z-f.minZ)/f.cell);
+ if(ix<0||iz<0||ix>=f.cols||iz>=f.rows)return false;
+ let id=iz*f.cols+ix,dx=f.vx[id],dz=f.vz[id];
+ // Recover onto a nearby reachable vector if the teacher stands on a blocked/target seed cell.
+ if((!dx&&!dz)||f.dist[id]<0){let best=-1,bd=1e9;for(let r=1;r<=5&&best<0;r++)for(let zz=-r;zz<=r;zz++)for(let xx=-r;xx<=r;xx++){const x=ix+xx,z=iz+zz;if(x<0||z<0||x>=f.cols||z>=f.rows)continue;const ni=z*f.cols+x;if(f.dist[ni]>=0&&f.dist[ni]>0&&xx*xx+zz*zz<bd){best=ni;bd=xx*xx+zz*zz}}if(best<0)return false;dx=f.vx[best];dz=f.vz[best]}
+ const mag=Math.hypot(dx,dz);if(!mag)return false;dx/=mag;dz/=mag;
+ const angle=Math.atan2(dx,dz);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+ const nx=p.x+dx*speed*dt,nz=p.z+dz*speed*dt;
+ if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(dx,0,dz);return true}
+ // Try adjacent field vectors in order of alignment when cell-edge collision occurs.
+ for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4, sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*speed*dt,z=p.z+sz*speed*dt;if(schoolScoreAt(x,z)===1){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
  return false
 }
-
 function buildCoordinateTrail(agent,target){
  // Sequential breadcrumbs with obstacle detours: permit sideways/backward steps when direct progress is blocked.
  const p=agent.root.position,goal=target.clone().setY(0),route=[new THREE.Vector3(p.x,0,p.z)],cur=route[0].clone();

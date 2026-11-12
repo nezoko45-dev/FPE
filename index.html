@@ -82,10 +82,16 @@ const raycaster=new THREE.Raycaster();
 // Cached school-wide ground score raster. Cell values: 1=open, 0=desk/blocked.
 const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolScoreObstacleCount=-1,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
 function rebuildSchoolScoreMap(){
- schoolScoreMinX=-60;schoolScoreMinZ=-60;schoolScoreCols=240;schoolScoreRows=240;
+ // Cover every generated school tile (plus a 10m safety border), not a fixed-size patch.
+ let minTX=0,maxTX=0,minTZ=0,maxTZ=0;
+ for(const key of generatedTiles||[]){const [x,z]=key.split(',').map(Number);minTX=Math.min(minTX,x);maxTX=Math.max(maxTX,x);minTZ=Math.min(minTZ,z);maxTZ=Math.max(maxTZ,z)}
+ schoolScoreMinX=minTX-15;schoolScoreMinZ=minTZ-15;
+ schoolScoreCols=Math.max(80,Math.ceil((maxTX-minTX+30)/SCHOOL_SCORE_CELL));
+ schoolScoreRows=Math.max(80,Math.ceil((maxTZ-minTZ+30)/SCHOOL_SCORE_CELL));
  const data=new Uint8Array(schoolScoreCols*schoolScoreRows);
  for(let iz=0;iz<schoolScoreRows;iz++)for(let ix=0;ix<schoolScoreCols;ix++){
   const x=schoolScoreMinX+(ix+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(iz+.5)*SCHOOL_SCORE_CELL;let open=1;
+  // Only desks/furniture (solid obstacle boxes) block field propagation. Walls are visual/non-solid and intentionally ignored.
   for(const box of obstacles){if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z){open=0;break}}
   data[iz*schoolScoreCols+ix]=open;
  }

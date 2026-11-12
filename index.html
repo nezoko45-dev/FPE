@@ -85,49 +85,31 @@ function teacherGroundScore(x,z){
  }
  return 1;
 }
+function buildTeacherBreadcrumbs(t,target){
+ const p=t.root.position,route=[new THREE.Vector3(p.x,0,p.z)],goal=target.clone().setY(0),cur=route[0].clone(),step=.85,max=100;let lastAngle=t.root.rotation.y;
+ for(let n=0;n<max&&cur.distanceTo(goal)>.9;n++){
+  const desired=Math.atan2(goal.x-cur.x,goal.z-cur.z);let best=null,bestScore=-Infinity;
+  for(let i=0;i<360;i+=3){const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a),nx=cur.x+vx*step,nz=cur.z+vz*step;if(teacherGroundScore(nx,nz)!==1)continue;
+   let clear=true;for(let k=1;k<=5;k++)if(teacherGroundScore(cur.x+vx*step*k/5,cur.z+vz*step*k/5)!==1){clear=false;break}if(!clear)continue;
+   const dist=Math.hypot(goal.x-nx,goal.z-nz),turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));let revisit=false;
+   for(let q=Math.max(0,route.length-8);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<.48){revisit=true;break}if(revisit)continue;
+   const score=(cur.distanceTo(goal)-dist)*4-turn*.22;if(score>bestScore){bestScore=score;best={x:nx,z:nz,a}}
+  }
+  if(!best)break;cur.set(best.x,0,best.z);lastAngle=best.a;route.push(cur.clone());
+  if(cur.distanceTo(goal)<step&&teacherGroundScore(goal.x,goal.z)===1){route.push(goal.clone());break}
+ }
+ t.coordRoute=route;t.coordWaypoint=1;t.coordTarget=goal.clone();t.coordRouteAt=elapsed;
+}
 function scoreSteerTeacher(t,target,dt,speed){
- const p=t.root.position,to=target.clone().sub(p).setY(0);if(to.lengthSq()<.01)return false;
- // Escape recovery: if spawned/pressed into a desk score-0 cell, seek nearby open score cells.
- if(teacherGroundScore(p.x,p.z)===0){
-  let escape=null;
-  // Continuous radial probes, not grid/cell lookup.
-  for(let radius=.25;radius<=4&&!escape;radius+=.25)for(let i=0;i<72;i++){
-   const a=i*Math.PI/36,x=p.x+Math.sin(a)*radius,z=p.z+Math.cos(a)*radius;
-   if(teacherGroundScore(x,z)===1){escape=new THREE.Vector3(x,0,z);break}
-  }
-  if(escape){const dx=escape.x-p.x,dz=escape.z-p.z,len=Math.hypot(dx,dz)||1,step=Math.min(len,Math.max(.08,speed*dt));p.x+=dx/len*step;p.z+=dz/len*step;t.moveDir.set(dx/len,0,dz/len);t.root.rotation.y=Math.atan2(dx,dz);return true}
-  // Last-resort drift: don't freeze if the cached score map has no nearby escape.
-  const a=t.root.rotation.y;p.x+=Math.sin(a)*Math.max(.08,speed*dt);p.z+=Math.cos(a)*Math.max(.08,speed*dt);return true
- }
- const desired=Math.atan2(to.x,to.z),targetDist=to.length(),candidates=[];
- // Score continuous world-space probes densely: corridor clearance + actual progress toward target.
- for(let i=0;i<360;i++){
-  const a=i*Math.PI/180,vx=Math.sin(a),vz=Math.cos(a);let clearDist=0,blockedAt=99;
-  // Fan-score several distances: reward MANY open (1) samples, not merely the first clear point.
-  let openSamples=0,zeroSamples=0;
-  for(const d of [.35,.7,1.05,1.4,1.8,2.3,2.9,3.6,4.4,5.2,5.8]){
-   if(teacherGroundScore(p.x+vx*d,p.z+vz*d)===1)openSamples++;
-   else {zeroSamples++;if(blockedAt===99)blockedAt=d;}
-  }
-  clearDist=blockedAt===99?5.8:Math.max(0,blockedAt-.35);
-  const progress=Math.max(-5.8,Math.min(5.8,to.x*vx+to.z*vz));
-  const targetBias=(Math.cos(a-desired)+1)*.5,turnBias=(Math.cos(a-t.root.rotation.y)+1)*.5;
-  // Multi-point open-score fan: prefer routes with many 1s and fewer desk 0s.
-  const score=openSamples*2.35-zeroSamples*2.8+clearDist*1.25+progress*1.65+targetBias*.9+turnBias*.2;
-  if(teacherGroundScore(p.x+vx*.18,p.z+vz*.18)===1)candidates.push({a,score,clearDist,progress})
- }
- if(!candidates.length)return false;candidates.sort((a,b)=>b.score-a.score);
- // Try scored headings in rank order; a blocked forward tile cannot freeze the teacher.
- let selected=candidates[0].a,moveAngle=null;
- for(const c of candidates.slice(0,36)){const vx=Math.sin(c.a),vz=Math.cos(c.a);let clear=true;for(let k=1;k<=4;k++){if(teacherGroundScore(p.x+vx*speed*dt*k/4,p.z+vz*speed*dt*k/4)===0){clear=false;break}}if(clear){selected=c.a;moveAngle=c.a;break}}
- const delta=Math.atan2(Math.sin(selected-t.root.rotation.y),Math.cos(selected-t.root.rotation.y));t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,delta));
- // Move on the best viable scored direction, while rotation eases toward it.
- if(moveAngle===null)moveAngle=selected;
- const vx=Math.sin(moveAngle),vz=Math.cos(moveAngle),step=speed*dt,nx=p.x+vx*step,nz=p.z+vz*step;
+ const p=t.root.position,goal=target.clone().setY(0);
+ if(!t.coordRoute||!t.coordTarget||t.coordTarget.distanceTo(goal)>2.2||t.coordWaypoint>=t.coordRoute.length-1||elapsed-(t.coordRouteAt||0)>2.5)buildTeacherBreadcrumbs(t,goal);
+ let route=t.coordRoute||[],wi=t.coordWaypoint||1;
+ while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;t.coordWaypoint=wi;let wp=route[wi];
+ if(!wp){buildTeacherBreadcrumbs(t,goal);route=t.coordRoute||[];wi=1;wp=route[wi];t.coordWaypoint=wi}if(!wp)return false;
+ const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y));
+ t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));const step=Math.min(len,speed*dt),nx=p.x+vx*step,nz=p.z+vz*step;
  if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
- // If a desk edge blocks the exact step, slide along its open tangent.
- for(const side of [-1,1]){const a=moveAngle+side*Math.PI/2,sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*step,z=p.z+sz*step;if(teacherGroundScore(x,z)===1){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
- return false
+ t.coordRoute=null;t.coordWaypoint=1;buildTeacherBreadcrumbs(t,goal);return false
 }
 function stepTeacher(t,dt){
  const p=t.root.position;

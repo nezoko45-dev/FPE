@@ -79,12 +79,26 @@ function navStep(pos,target,dt,speed,ray){const dir=target.clone().sub(pos).setY
 const raycaster=new THREE.Raycaster();
 // Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
 // Continuous ground score: directly test world-space positions against desk boxes. No grid, cells, or cached tiles.
-function teacherGroundScore(x,z){
- for(const box of obstacles){
-  if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z)return 0;
+// Cached school-wide ground score raster. Cell values: 1=open, 0=desk/blocked.
+const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolScoreObstacleCount=-1,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
+function rebuildSchoolScoreMap(){
+ schoolScoreMinX=-60;schoolScoreMinZ=-60;schoolScoreCols=240;schoolScoreRows=240;
+ const data=new Uint8Array(schoolScoreCols*schoolScoreRows);
+ for(let iz=0;iz<schoolScoreRows;iz++)for(let ix=0;ix<schoolScoreCols;ix++){
+  const x=schoolScoreMinX+(ix+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(iz+.5)*SCHOOL_SCORE_CELL;let open=1;
+  for(const box of obstacles){if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z){open=0;break}}
+  data[iz*schoolScoreCols+ix]=open;
  }
- return 1;
+ schoolScoreMap=data;schoolScoreObstacleCount=obstacles.length;
 }
+function schoolScoreAt(x,z){
+ if(!schoolScoreMap||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ const ix=Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL),iz=Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);
+ if(ix<0||iz<0||ix>=schoolScoreCols||iz>=schoolScoreRows)return 1;
+ return schoolScoreMap[iz*schoolScoreCols+ix];
+}
+function teacherGroundScore(x,z){return schoolScoreAt(x,z)}
+
 function buildTeacherBreadcrumbs(t,target){
  // Sequential teacher breadcrumbs with bounded detours around desks.
  const p=t.root.position,goal=target.clone().setY(0),route=[new THREE.Vector3(p.x,0,p.z)],cur=route[0].clone(),step=.65,max=220;let lastAngle=t.root.rotation.y,detour=0;
@@ -106,15 +120,23 @@ function buildTeacherBreadcrumbs(t,target){
 }
 
 function scoreSteerTeacher(t,target,dt,speed){
- const p=t.root.position,goal=target.clone().setY(0);
- if(!t.coordRoute||!t.coordTarget||t.coordTarget.distanceTo(goal)>2.2||t.coordWaypoint>=t.coordRoute.length-1)buildTeacherBreadcrumbs(t,goal);
- let route=t.coordRoute||[],wi=t.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;t.coordWaypoint=wi;let wp=route[wi];
- if(!wp){buildTeacherBreadcrumbs(t,goal);route=t.coordRoute||[];wi=1;wp=route[wi];t.coordWaypoint=wi}if(!wp)return false;
- const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y));
- t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));const step=Math.min(len,speed*dt),nx=p.x+vx*step,nz=p.z+vz*step;
- if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
- t.coordRoute=null;t.coordWaypoint=1;buildTeacherBreadcrumbs(t,goal);return false
+ const p=t.root.position,goal=target.clone().setY(0),dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);
+ if(dist<.2)return false;
+ const goalAngle=Math.atan2(dx,dz);let bestAngle=t.root.rotation.y,best=-Infinity;
+ // Sample the cached ground-score map in 48 directions; score open forward space + target alignment.
+ for(let i=0;i<48;i++){const a=i*Math.PI/24,vx=Math.sin(a),vz=Math.cos(a);let score=0,blocked=false;
+  for(let k=1;k<=8;k++){const d=k*.38,val=schoolScoreAt(p.x+vx*d,p.z+vz*d);if(!val){blocked=true;break}score+=1}
+  if(blocked)score-=8;
+  score+=Math.cos(a-goalAngle)*5;
+  score-=Math.abs(Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y)))*.18;
+  if(score>best){best=score;bestAngle=a}
+ }
+ const vx=Math.sin(bestAngle),vz=Math.cos(bestAngle),nx=p.x+vx*speed*dt,nz=p.z+vz*speed*dt;
+ t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(bestAngle-t.root.rotation.y),Math.cos(bestAngle-t.root.rotation.y))));
+ if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
+ return false
 }
+
 function buildCoordinateTrail(agent,target){
  // Sequential breadcrumbs with obstacle detours: permit sideways/backward steps when direct progress is blocked.
  const p=agent.root.position,goal=target.clone().setY(0),route=[new THREE.Vector3(p.x,0,p.z)],cur=route[0].clone();
@@ -141,18 +163,18 @@ function buildCoordinateTrail(agent,target){
 }
 
 function followCoordinateTrail(agent,target,dt,speed){
- const p=agent.root.position,goal=target.clone().setY(0);
- if(!agent.coordLastPos){agent.coordLastPos=p.clone();agent.coordMovedAt=elapsed}
- if(Math.hypot(p.x-agent.coordLastPos.x,p.z-agent.coordLastPos.z)>.12){agent.coordLastPos.copy(p);agent.coordMovedAt=elapsed;agent.coordBias=0}
- else if(elapsed-(agent.coordMovedAt||0)>1.1){agent.coordBias=(agent.coordBias||0)+Math.PI/4;agent.coordRoute=null;agent.coordWaypoint=1;agent.coordMovedAt=elapsed;agent.coordLastPos.copy(p)}
- if(!agent.coordRoute||agent.coordRoute.length<4||!agent.coordTarget||agent.coordTarget.distanceTo(goal)>2.2||agent.coordWaypoint>=agent.coordRoute.length-1||elapsed-(agent.coordRouteAt||0)>2.5)buildCoordinateTrail(agent,goal);
- let route=agent.coordRoute||[],wi=agent.coordWaypoint||1;while(wi<route.length&&Math.hypot(route[wi].x-p.x,route[wi].z-p.z)<.42)wi++;agent.coordWaypoint=wi;let wp=route[wi];
- if(!wp){buildCoordinateTrail(agent,goal);route=agent.coordRoute||[];wi=1;wp=route[wi];agent.coordWaypoint=wi}if(!wp)return false;
- const dx=wp.x-p.x,dz=wp.z-p.z,len=Math.hypot(dx,dz)||1,vx=dx/len,vz=dz/len,angle=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(angle-agent.root.rotation.y),Math.cos(angle-agent.root.rotation.y));
- agent.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));const step=Math.min(len,speed*dt),nx=p.x+vx*step,nz=p.z+vz*step;
- if(teacherGroundScore(nx,nz)===1){p.x=nx;p.z=nz;agent.moveDir.set(vx,0,vz);return true}
- agent.coordBias=(agent.coordBias||0)+Math.PI/4;agent.coordRoute=null;agent.coordWaypoint=1;buildCoordinateTrail(agent,goal);return false
+ const p=agent.root.position,goal=target.clone().setY(0),dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);if(dist<.2)return false;
+ const goalAngle=Math.atan2(dx,dz);let bestAngle=agent.root.rotation.y,best=-Infinity;
+ for(let i=0;i<48;i++){const a=i*Math.PI/24,vx=Math.sin(a),vz=Math.cos(a);let score=0,blocked=false;
+  for(let k=1;k<=8;k++){const d=k*.32;if(!schoolScoreAt(p.x+vx*d,p.z+vz*d)){blocked=true;break}score+=1}
+  if(blocked)score-=8;score+=Math.cos(a-goalAngle)*5;score-=Math.abs(Math.atan2(Math.sin(a-agent.root.rotation.y),Math.cos(a-agent.root.rotation.y)))*.18;
+  if(score>best){best=score;bestAngle=a}
+ }
+ const vx=Math.sin(bestAngle),vz=Math.cos(bestAngle),nx=p.x+vx*speed*dt,nz=p.z+vz*speed*dt;
+ agent.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(bestAngle-agent.root.rotation.y),Math.cos(bestAngle-agent.root.rotation.y))));
+ if(schoolScoreAt(nx,nz)===1){p.x=nx;p.z=nz;agent.moveDir.set(vx,0,vz);return true}return false
 }
+
 function stepTeacher(t,dt){
  const p=t.root.position;
  if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){scoreSteerTeacher(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}

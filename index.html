@@ -315,12 +315,8 @@ for(const s of survivors){
   const toItem=target.mesh.position.clone().sub(s.root.position).setY(0);
   if(toItem.length()<.85){scene.remove(target.mesh);items.splice(items.indexOf(target),1);if(target.kind==='paper')papers++;else oreos++;s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null;flowVizAt=elapsed-.36}
   else{
-   const ud=s.root.userData,goal=target.mesh.position;
-   if(!ud.collectFlow||ud.collectFlow.mapVersion!==schoolFlowMapVersion||ud.collectFlow.mapTileCount!==generatedTiles.size||ud.collectItem!==target||elapsed-(ud.collectFlowAt||0)>.5||Math.hypot(goal.x-ud.collectFlow.targetX,goal.z-ud.collectFlow.targetZ)>1.25||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length){
-    ud.collectFlow=buildTeacherFlowField(goal);ud.collectFlowAt=elapsed;ud.collectItem=target;
-   }
-   const f=ud.collectFlow,p=s.root.position;
-   if(f){steerVectorAgent(s,target.mesh.position,dt,2.4)}
+   // Survivors use the same inverse-raycast steering as teachers, aimed at their collectible.
+   steerVectorAgent(s,target.mesh.position,dt,2.4);
   s.target=target
   }
  }else{s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null}

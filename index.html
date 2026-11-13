@@ -267,12 +267,16 @@ function stepTeacher(t,dt){
  const p=t.root.position;
  if(phaseTime<DAY){const home=t.home.clone().sub(p).setY(0);if(home.length()>.65){steerTeacherWaypoints(t,t.home,dt,t.speed);t.rayAnchors=[];if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
- // Lock onto one moving target for 11 seconds, then choose the nearest living target again.
+ // Pick a moving target on an 11-second cycle (not the nearest one).
+ // Keep tracking its live position; if it dies, immediately choose another.
  const ud=t.root.userData;
- if(!ud.chaseTarget||elapsed>=(ud.chaseUntil||0)||ud.chaseTarget===player.pos&&dead||survivors.some(s=>s.root.position===ud.chaseTarget&&s.dead)){
-  let chosen=player.pos,best=p.distanceTo(player.pos);
-  for(const s of survivors)if(!s.dead){const d=p.distanceTo(s.root.position);if(d<best){best=d;chosen=s.root.position}}
-  ud.chaseTarget=chosen;ud.chaseUntil=elapsed+11;
+ const currentDead=ud.chaseTarget===player.pos&&dead||survivors.some(s=>s.root.position===ud.chaseTarget&&s.dead);
+ if(!ud.chaseTarget||elapsed>=(ud.chaseUntil||0)||currentDead){
+  const candidates=[...(dead?[]:[player.pos]),...survivors.filter(s=>!s.dead).map(s=>s.root.position)];
+  const pool=candidates.filter(pos=>pos!==ud.chaseTarget);
+  const available=pool.length?pool:candidates;
+  ud.chaseTarget=available.length?available[Math.floor(Math.random()*available.length)]:player.pos;
+  ud.chaseUntil=elapsed+11;
  }
  let target=ud.chaseTarget,nearest=p.distanceTo(target);
  // Resolve the target's current position every frame; its flowfield follows it while locked.

@@ -20,8 +20,8 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
 const obstacles=[],rayMeshes=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[];
-function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){obstacles.push(new THREE.Box3().setFromObject(o));rayMeshes.push(o)}return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.rayObstacle=true;rayMeshes.push(o);return o}
+function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){obstacles.push(new THREE.Box3().setFromObject(o));o.userData.avoidVector=true;rayMeshes.push(o)}return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.rayObstacle=true;o.userData.avoidVector=true;rayMeshes.push(o);return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
 if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
@@ -181,38 +181,33 @@ function buildTeacherWaypoints(t,target){
 }
 function steerVectorAgent(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
- const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.12)return false;
+ const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);if(dist<.12)return false;
  const forward=new THREE.Vector3(dx/dist,0,dz/dist),origin=p.clone().add(new THREE.Vector3(0,.85,0));
- const nearby=nearbyRayMeshes(p,7),ray=t.ray||new THREE.Raycaster();t.ray=ray;
- const cast=(dir,length=2.6)=>{ray.set(origin,dir);ray.far=length;return ray.intersectObjects(nearby,false)[0]||null};
- // Inverse-raycast avoidance: obstacle on one side pushes steering toward the opposite side.
- const left=new THREE.Vector3(-forward.z,0,forward.x),right=left.clone().negate();
- const centerHit=cast(forward,2.8),leftHit=cast(forward.clone().add(left.clone().multiplyScalar(.58)).normalize(),2.5),rightHit=cast(forward.clone().add(right.clone().multiplyScalar(.58)).normalize(),2.5);
- let steer=forward.clone();
- if(centerHit||leftHit||rightHit){
-  let avoid=new THREE.Vector3();
-  if(leftHit&&!rightHit)avoid.add(right);
-  else if(rightHit&&!leftHit)avoid.add(left);
-  else if(leftHit&&rightHit)avoid.add(centerHit?right:forward.clone().negate());
-  else if(centerHit){const sideL=cast(left,1.8),sideR=cast(right,1.8);avoid.copy(sideL&&!sideR?right:sideR&&!sideL?left:(leftHit?right:right));}
-  steer.add(avoid.multiplyScalar(2.35));
+ const nearby=nearbyRayMeshes(p,8),ray=t.ray||new THREE.Raycaster();t.ray=ray;
+ // Every compass vector is a candidate. Avoidable objects block vectors they intersect;
+ // the best remaining clear vector points most directly toward the target.
+ let best=null,bestScore=-Infinity;
+ for(let k=0;k<24;k++){
+  const a=k*Math.PI*2/24,v=new THREE.Vector3(Math.sin(a),0,Math.cos(a));
+  ray.set(origin,v);ray.far=2.4;
+  const hit=ray.intersectObjects(nearby.filter(o=>o.userData.avoidVector),false)[0];
+  const step=Math.min(speed*dt,.55),nx=p.x+v.x*step,nz=p.z+v.z*step;
+  if(hit||teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))continue;
+  const alignment=v.dot(forward),progress=dist-Math.hypot(goal.x-nx,goal.z-nz);
+  const score=alignment*2.4+progress*1.8;
+  if(score>bestScore){bestScore=score;best=v}
  }
- // Ground occupancy remains a short-range safety check, not a route planner.
- for(const a of [0,-Math.PI/8,Math.PI/8,-Math.PI/4,Math.PI/4]){
-  const v=new THREE.Vector3(Math.sin(Math.atan2(steer.x,steer.z)+a),0,Math.cos(Math.atan2(steer.x,steer.z)+a));
-  if(teacherGroundScore(p.x+v.x*.65,p.z+v.z*.65)!==1)steer.add(v.clone().negate().multiplyScalar(1.1));
+ if(!best){
+  // If all vectors are blocked, reverse/side vectors can escape a tight corner.
+  for(let k=0;k<24;k++){const a=k*Math.PI*2/24,v=new THREE.Vector3(Math.sin(a),0,Math.cos(a)),nx=p.x+v.x*speed*dt,nz=p.z+v.z*speed*dt;
+   if(teacherGroundScore(nx,nz)===1&&teacherSegmentClear(p.x,p.z,nx,nz)){best=v;break}}
  }
- steer.y=0;if(steer.lengthSq()<1e-5)steer.copy(forward);steer.normalize();
- const heading=Math.atan2(steer.x,steer.z),step=speed*dt;
- for(const turn of [0,-1,1,-2,2,-3,3,4]){
-  const a=heading+turn*Math.PI/8,vx=Math.sin(a),vz=Math.cos(a),nx=p.x+vx*step,nz=p.z+vz*step;
-  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))continue;
-  p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);
-  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
-  ud.teacherVector=steer.clone();return true;
- }
- ud.teacherVector=steer.clone();return false;
+ if(!best){ud.teacherVector=new THREE.Vector3();return false}
+ const nx=p.x+best.x*speed*dt,nz=p.z+best.z*speed*dt;
+ if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
+ p.x=nx;p.z=nz;t.moveDir.set(best.x,0,best.z);
+ const a=Math.atan2(best.x,best.z);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
+ ud.teacherVector=best.clone();return true;
 }
 function steerTeacherWaypoints(t,target,dt,speed){return steerVectorAgent(t,target,dt,speed)}
 function moveTeacherToward(t,point,dt,speed){

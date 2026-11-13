@@ -201,11 +201,20 @@ function steerVectorAgent(t,target,dt,speed){
   if(score>bestScore){bestScore=score;best=v}
  }
  if(!best){ud.teacherVector=new THREE.Vector3();return false}
- const nx=p.x+best.x*speed*dt,nz=p.z+best.z*speed*dt;
- if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
- p.x=nx;p.z=nz;t.moveDir.set(best.x,0,best.z);
- const a=Math.atan2(best.x,best.z);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
- ud.teacherVector=best.clone();return true;
+ // Persist heading and smoothly bend it toward the selected clear vector.
+ let heading=ud.curvedVector;
+ if(!heading||heading.lengthSq()<.01)heading=t.moveDir&&t.moveDir.lengthSq()>.01?t.moveDir.clone():forward.clone();
+ heading=heading.clone().setY(0).normalize();
+ const blend=1-Math.exp(-Math.min(dt,.1)*4.2);
+ heading.lerp(best,blend).normalize();
+ let nx=p.x+heading.x*speed*dt,nz=p.z+heading.z*speed*dt;
+ if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz)){
+  heading=best.clone();nx=p.x+heading.x*speed*dt;nz=p.z+heading.z*speed*dt;
+  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
+ }
+ p.x=nx;p.z=nz;t.moveDir.set(heading.x,0,heading.z);ud.curvedVector=heading.clone();
+ const a=Math.atan2(heading.x,heading.z);t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
+ ud.teacherVector=heading.clone();return true;
 }
 function steerTeacherWaypoints(t,target,dt,speed){return steerVectorAgent(t,target,dt,speed)}
 function moveTeacherToward(t,point,dt,speed){

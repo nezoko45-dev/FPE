@@ -226,7 +226,14 @@ function steerVectorAgent(t,target,dt,speed){
  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz)){
   v.x+=repelX*.55+tangentX*.65;v.z+=repelZ*.55+tangentZ*.65;v.normalize();
   nx=p.x+v.x*step;nz=p.z+v.z*step;
-  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
+  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz)){
+   // Persist a deterministic turning recovery instead of returning the same blocked heading forever.
+   const turn=(ud.recoveryTurn||1);ud.recoveryTurn=-turn;
+   const angle=turn*.72,cs=Math.cos(angle),sn=Math.sin(angle),rx=v.x*cs-v.z*sn,rz=v.x*sn+v.z*cs;
+   v.set(rx,0,rz).normalize();ud.curvedVector=v.clone();
+   step=Math.min(speed*dt,.18);nx=p.x+v.x*step;nz=p.z+v.z*step;
+   if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
+  }
  }
  p.x=nx;p.z=nz;ud.curvedVector=v.clone();ud.teacherVector=v.clone();t.moveDir.set(v.x,0,v.z);
  const a=Math.atan2(v.x,v.z);t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
@@ -627,7 +634,7 @@ expandSchool();for(const t of teachers){t.mixer?.update(dt);stepTeacher(t,dt)}
 for(const s of survivors){
  if(s.dead){if(elapsed>s.respawn){s.dead=false;s.hp=100;s.root.visible=true;
   // Respawn only on a verified open floor cell; random coordinates could land inside desks/walls.
-  let spawn=null;for(let radius=0;radius<=12&&!spawn;radius+=1)for(let a=0;a<24&&!spawn;a++){const ang=a*Math.PI/12,x=Math.cos(ang)*radius,z=8+Math.sin(ang)*radius;if(teacherGroundScore(x,z)===1&&teacherSegmentClear(x,z,x+.01,z))spawn=new THREE.Vector3(x,0,z)}
+  let spawn=null;for(let radius=0;radius<=14&&!spawn;radius+=.5)for(let a=0;a<48&&!spawn;a++){const ang=a*Math.PI/24,x=Math.cos(ang)*radius,z=8+Math.sin(ang)*radius;let open=true;for(const q of [[0,0],[.45,0],[-.45,0],[0,.45],[0,-.45]])if(teacherGroundScore(x+q[0],z+q[1])!==1){open=false;break}if(open&&teacherSegmentClear(x,z,x+.01,z))spawn=new THREE.Vector3(x,0,z)}
   s.root.position.copy(spawn||new THREE.Vector3(0,0,8));s.root.rotation.y=0;s.anchors=null;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=null;s.root.userData.teacherVector=null;s.root.userData.avoidSides=new Map();s.root.userData.collectFlow=null;s.root.userData.collectItem=null;s.target=null}continue}
  let target=null,best=Infinity;for(const it of items){const d=it.mesh.position.distanceTo(s.root.position);if(d<best&&d<24){best=d;target=it}}
  if(target){

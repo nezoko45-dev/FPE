@@ -182,39 +182,55 @@ function buildTeacherWaypoints(t,target){
 function steerVectorAgent(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),ud=t.root.userData;
  const dx=goal.x-p.x,dz=goal.z-p.z,dist=Math.hypot(dx,dz);if(dist<.12)return false;
- const forward=new THREE.Vector3(dx/dist,0,dz/dist),step=Math.min(speed*dt,.55);
- // Vector navigation: test compass movement vectors and score their target progress
- // plus clearance from nearby obstacle bounds. No raycasts or pathfinding graphs.
- let best=null,bestScore=-Infinity;
- for(let k=0;k<32;k++){
-  const a=k*Math.PI*2/32,v=new THREE.Vector3(Math.sin(a),0,Math.cos(a));
-  const nx=p.x+v.x*step,nz=p.z+v.z*step;
-  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))continue;
-  let clearance=3;
-  for(const b of steeringBounds){
-   const qx=Math.max(b.min.x,Math.min(nx,b.max.x)),qz=Math.max(b.min.z,Math.min(nz,b.max.z));
-   const gap=Math.hypot(nx-qx,nz-qz);
-   if(gap<clearance)clearance=gap;
-  }
-  const alignment=v.dot(forward),progress=dist-Math.hypot(goal.x-nx,goal.z-nz);
-  const score=alignment*2.2+progress*2+Math.min(clearance,2.2)*.9;
-  if(score>bestScore){bestScore=score;best=v}
+ const desiredX=dx/dist,desiredZ=dz/dist;
+ // ONE persistent steering vector. Obstacles continuously repel it and add
+ // a tangent component so the heading follows an edge instead of bouncing off it.
+ let v=ud.curvedVector;
+ if(!v||!Number.isFinite(v.x)||!Number.isFinite(v.z)||v.lengthSq()<.001)v=new THREE.Vector3(desiredX,0,desiredZ);
+ v=v.clone().setY(0).normalize();
+ let repelX=0,repelZ=0,tangentX=0,tangentZ=0,near=0;
+ const look= Math.max(1.35,Math.min(3.2,1.2+speed*.42));
+ const probeX=p.x+v.x*look,probeZ=p.z+v.z*look;
+ for(const b of steeringBounds){
+  const qx=Math.max(b.min.x,Math.min(probeX,b.max.x)),qz=Math.max(b.min.z,Math.min(probeZ,b.max.z));
+  let ox=probeX-qx,oz=probeZ-qz,gap=Math.hypot(ox,oz);
+  // If probe is inside a box, use the nearest outward face normal.
+  if(gap<.001){
+   const faces=[[Math.abs(probeX-b.min.x),-1,0],[Math.abs(b.max.x-probeX),1,0],[Math.abs(probeZ-b.min.z),0,-1],[Math.abs(b.max.z-probeZ),0,1]].sort((a,c)=>a[0]-c[0]);
+   ox=faces[0][1];oz=faces[0][2];gap=.001;
+  }else{ox/=gap;oz/=gap}
+  const influence=2.8,weight=Math.max(0,(influence-gap)/influence);
+  if(!weight)continue;
+  near+=weight;
+  repelX+=ox*weight;repelZ+=oz*weight;
+  // Pick a stable side once per obstacle encounter; tangent carries the
+  // vector around the perimeter while outward force maintains clearance.
+  const side=ud.avoidSides?.get(b)??(v.x*oz-v.z*ox>=0?1:-1);
+  if(!ud.avoidSides)ud.avoidSides=new Map();
+  ud.avoidSides.set(b,side);
+  tangentX+=(-oz)*side*weight;tangentZ+=ox*side*weight;
  }
- if(!best){ud.teacherVector=new THREE.Vector3();return false}
- // Persist heading and smoothly bend it toward the selected clear vector.
- let heading=ud.curvedVector;
- if(!heading||heading.lengthSq()<.01)heading=t.moveDir&&t.moveDir.lengthSq()>.01?t.moveDir.clone():forward.clone();
- heading=heading.clone().setY(0).normalize();
- const blend=1-Math.exp(-Math.min(dt,.1)*4.2);
- heading.lerp(best,blend).normalize();
- let nx=p.x+heading.x*speed*dt,nz=p.z+heading.z*speed*dt;
+ const repLen=Math.hypot(repelX,repelZ),tanLen=Math.hypot(tangentX,tangentZ);
+ if(repLen>0){repelX/=repLen;repelZ/=repLen}
+ if(tanLen>0){tangentX/=tanLen;tangentZ/=tanLen}
+ // Repulsion dominates when close; tangent sustains the wrap-around arc.
+ const proximity=Math.min(1,near*.72);
+ let fx=desiredX*(1-proximity*.82)+repelX*(proximity*1.65)+tangentX*(proximity*1.35);
+ let fz=desiredZ*(1-proximity*.82)+repelZ*(proximity*1.65)+tangentZ*(proximity*1.35);
+ const fl=Math.hypot(fx,fz)||1;fx/=fl;fz/=fl;
+ const blend=1-Math.exp(-Math.max(0,Math.min(dt,.1))*2.8);
+ v.x+=(fx-v.x)*blend;v.z+=(fz-v.z)*blend;v.normalize();
+ // Validate the integrated vector; strengthen repulsion/tangent if its
+ // immediate segment is blocked, without selecting from a compass array.
+ let step=Math.min(speed*dt,.42),nx=p.x+v.x*step,nz=p.z+v.z*step;
  if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz)){
-  heading=best.clone();nx=p.x+heading.x*speed*dt;nz=p.z+heading.z*speed*dt;
+  v.x+=repelX*.55+tangentX*.65;v.z+=repelZ*.55+tangentZ*.65;v.normalize();
+  nx=p.x+v.x*step;nz=p.z+v.z*step;
   if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
  }
- p.x=nx;p.z=nz;t.moveDir.set(heading.x,0,heading.z);ud.curvedVector=heading.clone();
- const a=Math.atan2(heading.x,heading.z);t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
- ud.teacherVector=heading.clone();return true;
+ p.x=nx;p.z=nz;ud.curvedVector=v.clone();ud.teacherVector=v.clone();t.moveDir.set(v.x,0,v.z);
+ const a=Math.atan2(v.x,v.z);t.root.rotation.y+=Math.max(-dt*5,Math.min(dt*5,Math.atan2(Math.sin(a-t.root.rotation.y),Math.cos(a-t.root.rotation.y))));
+ return true;
 }
 function steerTeacherWaypoints(t,target,dt,speed){return steerVectorAgent(t,target,dt,speed)}
 function moveTeacherToward(t,point,dt,speed){

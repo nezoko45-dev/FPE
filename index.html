@@ -656,7 +656,18 @@ for(const s of survivors){
    steerVectorAgent(s,target.mesh.position,dt,2.4);
   s.target=target
   }
- }else{s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null}
+ }else{
+  // No collectible nearby? Keep survivors moving instead of idling forever after respawn.
+  s.target=null;s.root.userData.collectFlow=null;s.root.userData.collectItem=null;
+  const ud=s.root.userData,p=s.root.position;let roam=ud.roamTarget;
+  if(!roam||Math.hypot(roam.x-p.x,roam.z-p.z)<1.2||elapsed>(ud.roamUntil||0)){
+   const base=ud.curvedVector&&ud.curvedVector.lengthSq()>.01?ud.curvedVector.clone().setY(0).normalize():s.moveDir.clone().setY(0).normalize();
+   const turn=(Math.random()-.5)*Math.PI*1.7,dir=base.clone().applyAxisAngle(new THREE.Vector3(0,1,0),turn);
+   roam=new THREE.Vector3(p.x+dir.x*(5+Math.random()*7),0,p.z+dir.z*(5+Math.random()*7));
+   ud.roamTarget=roam;ud.roamUntil=elapsed+3+Math.random()*4;
+  }
+  steerVectorAgent(s,roam,dt,2.0);
+ }
  s.phase+=dt*5;const swing=Math.sin(s.phase)*.55;s.legs[0].rotation.x=swing;s.legs[1].rotation.x=-swing;s.arms[0].rotation.x=-swing*.7;s.arms[1].rotation.x=swing*.7;s.root.position.y=Math.abs(Math.sin(s.phase))*.045
 }
 for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flowVizAt>.5){drawFlowGizmos();flowVizAt=elapsed}

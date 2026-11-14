@@ -517,7 +517,18 @@ function steerVectorAgent(t,target,dt,speed){
   const score=alignment*2.2+progress*2+Math.min(clearance,2.2)*.9;
   if(score>bestScore){bestScore=score;best=v}
  }
- if(!best){ud.teacherVector=new THREE.Vector3();return false}
+ if(!best){
+  // Recover instead of leaving a survivor permanently frozen on a blocked respawn heading.
+  const escapeStep=Math.max(step,.35);let escape=null,escapeScore=-Infinity;
+  for(let k=0;k<64;k++){const a=k*Math.PI*2/64,v=new THREE.Vector3(Math.sin(a),0,Math.cos(a)),nx=p.x+v.x*escapeStep,nz=p.z+v.z*escapeStep;
+   if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))continue;
+   const progress=dist-Math.hypot(goal.x-nx,goal.z-nz);let clearance=2;
+   for(const b of steeringBounds){const qx=Math.max(b.min.x,Math.min(nx,b.max.x)),qz=Math.max(b.min.z,Math.min(nz,b.max.z));clearance=Math.min(clearance,Math.hypot(nx-qx,nz-qz))}
+   const score=progress+Math.min(clearance,1)*.35;if(score>escapeScore){escapeScore=score;escape=v}
+  }
+  if(!escape){ud.teacherVector=new THREE.Vector3();return false}
+  best=escape;
+ }
  // Persist heading and smoothly bend it toward the selected clear vector.
  let heading=ud.curvedVector;
  if(!heading||heading.lengthSq()<.01)heading=t.moveDir&&t.moveDir.lengthSq()>.01?t.moveDir.clone():forward.clone();
@@ -635,7 +646,7 @@ for(const s of survivors){
  if(s.dead){if(elapsed>s.respawn){s.dead=false;s.hp=100;s.root.visible=true;
   // Respawn only on a verified open floor cell; random coordinates could land inside desks/walls.
   let spawn=null;for(let radius=0;radius<=14&&!spawn;radius+=.5)for(let a=0;a<48&&!spawn;a++){const ang=a*Math.PI/24,x=Math.cos(ang)*radius,z=8+Math.sin(ang)*radius;let open=true;for(const q of [[0,0],[.45,0],[-.45,0],[0,.45],[0,-.45]])if(teacherGroundScore(x+q[0],z+q[1])!==1){open=false;break}if(open&&teacherSegmentClear(x,z,x+.01,z))spawn=new THREE.Vector3(x,0,z)}
-  s.root.position.copy(spawn||new THREE.Vector3(0,0,8));s.root.rotation.y=0;s.anchors=null;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=null;s.root.userData.teacherVector=null;s.root.userData.avoidSides=new Map();s.root.userData.collectFlow=null;s.root.userData.collectItem=null;s.target=null}continue}
+  s.root.position.copy(spawn||new THREE.Vector3(0,0,8));s.root.rotation.y=0;s.anchors=null;s.moveDir.set(0,0,-1);s.phase=Math.random()*6;s.root.userData.curvedVector=new THREE.Vector3(0,0,-1);s.root.userData.teacherVector=new THREE.Vector3(0,0,-1);s.root.userData.recoveryTurn=1;s.root.userData.avoidSides=new Map();s.root.userData.collectFlow=null;s.root.userData.collectWaypoints=null;s.root.userData.collectItem=null;s.target=null}continue}
  let target=null,best=Infinity;for(const it of items){const d=it.mesh.position.distanceTo(s.root.position);if(d<best&&d<24){best=d;target=it}}
  if(target){
   const toItem=target.mesh.position.clone().sub(s.root.position).setY(0);

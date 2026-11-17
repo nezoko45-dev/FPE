@@ -243,41 +243,66 @@ function steerVectorAgent(t,target,dt,speed){
 // Teacher particle graph: obstacle AABBs emit perimeter particles; movement follows exact particle positions.
 // The existing school score keeps desks blocked and walls pass-through.
 function buildTeacherParticleRoute(t,target){
- // Sequential physical particles only: no graph, heap, BFS, or Dijkstra.
+ // Ordered particles only. Walk around each intersecting collision bound, then continue to the target.
  const start=t.root.position.clone().setY(0),goal=target.clone().setY(0);
- if(start.distanceTo(goal)<.3)return [start,goal];
  if(!teacherGroundScore(start.x,start.z))return [];
  if(!teacherGroundScore(goal.x,goal.z)){
-  let found=null;for(let r=.45;r<=3.6&&!found;r+=.45)for(let a=0;a<Math.PI*2;a+=Math.PI/8){const q=new THREE.Vector3(goal.x+Math.cos(a)*r,0,goal.z+Math.sin(a)*r);if(teacherGroundScore(q.x,q.z)){found=q;break}}
+  let found=null;for(let r=.45;r<=3.6&&!found;r+=.45)for(let a=0;a<Math.PI*2;a+=Math.PI/12){const q=new THREE.Vector3(goal.x+Math.cos(a)*r,0,goal.z+Math.sin(a)*r);if(teacherGroundScore(q.x,q.z)){found=q;break}}
   if(found)goal.copy(found);else return [];
  }
- const route=[start.clone()],addSegmentParticles=(from,to)=>{const d=from.distanceTo(to),count=Math.max(1,Math.ceil(d/1.15));for(let i=1;i<=count;i++)route.push(from.clone().lerp(to,i/count))};
+ const route=[start.clone()];
+ const append=(from,to)=>{const n=Math.max(1,Math.ceil(from.distanceTo(to)/.85));for(let i=1;i<=n;i++)route.push(from.clone().lerp(to,i/n))};
  const sx=goal.x-start.x,sz=goal.z-start.z,seg2=sx*sx+sz*sz||1,hits=[];
  for(const bounds of obstacles){
-  const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5,u=Math.max(0,Math.min(1,((cx-start.x)*sx+(cz-start.z)*sz)/seg2));
-  if(Math.hypot(cx-(start.x+sx*u),cz-(start.z+sz*u))>2.2)continue;
-  const pad=.9,minX=bounds.min.x-pad,maxX=bounds.max.x+pad,minZ=bounds.min.z-pad,maxZ=bounds.max.z+pad;let crossed=false;
-  for(let k=0;k<=12;k++){const q=k/12,x=start.x+sx*q,z=start.z+sz*q;if(x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ){crossed=true;break}}
+  const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
+  const u=Math.max(0,Math.min(1,((cx-start.x)*sx+(cz-start.z)*sz)/seg2));
+  if(Math.hypot(cx-(start.x+sx*u),cz-(start.z+sz*u))>2.8)continue;
+  const pad=1.05,minX=bounds.min.x-pad,maxX=bounds.max.x+pad,minZ=bounds.min.z-pad,maxZ=bounds.max.z+pad;
+  let crossed=false;for(let k=0;k<=20;k++){const q=k/20,x=start.x+sx*q,z=start.z+sz*q;if(x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ){crossed=true;break}}
   if(crossed)hits.push({u,minX,maxX,minZ,maxZ});
  }
- hits.sort((a,b)=>a.u-b.u);let cursor=start.clone();
+ hits.sort((a,b)=>a.u-b.u);
+ let cursor=start.clone();
  for(const h of hits){
-  // Try fixed collision-bound perimeter particle sequences; use the first clear side.
-  const detours=[
-   [new THREE.Vector3(h.minX,0,h.minZ),new THREE.Vector3(h.minX,0,h.maxZ)],
-   [new THREE.Vector3(h.maxX,0,h.minZ),new THREE.Vector3(h.maxX,0,h.maxZ)],
-   [new THREE.Vector3(h.minX,0,h.minZ),new THREE.Vector3(h.maxX,0,h.minZ)],
-   [new THREE.Vector3(h.minX,0,h.maxZ),new THREE.Vector3(h.maxX,0,h.maxZ)]
-  ];let chosen=null;
-  for(const pair of detours){const [a,b]=pair;if(!teacherGroundScore(a.x,a.z)||!teacherGroundScore(b.x,b.z))continue;if(!teacherSegmentClear(cursor.x,cursor.z,a.x,a.z)||!teacherSegmentClear(a.x,a.z,b.x,b.z))continue;chosen=pair;break}
-  if(!chosen)continue;addSegmentParticles(cursor,chosen[0]);cursor=chosen[0].clone();addSegmentParticles(cursor,chosen[1]);cursor=chosen[1].clone();
+  const corners=[
+   new THREE.Vector3(h.minX,0,h.minZ),new THREE.Vector3(h.maxX,0,h.minZ),
+   new THREE.Vector3(h.maxX,0,h.maxZ),new THREE.Vector3(h.minX,0,h.maxZ)
+  ];
+  let best=null;
+  // Try clockwise and counter-clockwise perimeter sequences, beginning at each corner.
+  for(let dir of [1,-1])for(let entry=0;entry<4;entry++){
+   const candidate=[corners[entry]];
+   for(let n=1;n<4;n++)candidate.push(corners[(entry+dir*n+8)%4]);
+   if(!teacherGroundScore(candidate[0].x,candidate[0].z)||!teacherSegmentClear(cursor.x,cursor.z,candidate[0].x,candidate[0].z))continue;
+   let valid=true,exit=-1;
+   for(let n=1;n<4;n++){
+    const prev=candidate[n-1],next=candidate[n];
+    if(!teacherGroundScore(next.x,next.z)||!teacherSegmentClear(prev.x,prev.z,next.x,next.z)){valid=false;break}
+    if(teacherSegmentClear(next.x,next.z,goal.x,goal.z)){exit=n;break}
+   }
+   if(valid&&exit>=1){best=candidate.slice(0,exit+1);break}
+  }
+  if(!best)continue;
+  for(const point of best){append(cursor,point);cursor=point.clone()}
  }
- if(!teacherSegmentClear(cursor.x,cursor.z,goal.x,goal.z))return [];
- addSegmentParticles(cursor,goal);return route;
+ // If a bound couldn't be skirted, don't hand the follower an empty route: try a modest side-step
+ // sequence around the direct corridor before giving up.
+ if(!teacherSegmentClear(cursor.x,cursor.z,goal.x,goal.z)){
+  const dx=goal.x-cursor.x,dz=goal.z-cursor.z,len=Math.hypot(dx,dz)||1,sideX=-dz/len,sideZ=dx/len;
+  let detour=null;
+  for(const sign of [1,-1])for(let distance=1.5;distance<=6&&!detour;distance+=.75){
+   const mid=new THREE.Vector3(cursor.x+sideX*distance*sign,0,cursor.z+sideZ*distance*sign);
+   if(teacherGroundScore(mid.x,mid.z)&&teacherSegmentClear(cursor.x,cursor.z,mid.x,mid.z)&&teacherSegmentClear(mid.x,mid.z,goal.x,goal.z))detour=mid;
+  }
+  if(!detour)return [];
+  append(cursor,detour);cursor=detour;
+ }
+ append(cursor,goal);
+ return route;
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),oldGoal=t.particleTarget;
- if(!t.particleRoute?.length||!oldGoal||oldGoal.distanceTo(goal)>1.25||elapsed-t.particleRouteAt>1.35||t.particleIndex>=t.particleRoute.length){
+ if(!t.particleRoute?.length||!oldGoal||oldGoal.distanceTo(goal)>1.25||false||t.particleIndex>=t.particleRoute.length){
   t.particleRoute=buildTeacherParticleRoute(t,goal);t.particleIndex=1;t.particleTarget=goal.clone();t.particleRouteAt=elapsed;
  }
  const route=t.particleRoute;if(!route?.length||route.length<2)return false;

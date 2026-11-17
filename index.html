@@ -243,6 +243,7 @@ function steerVectorAgent(t,target,dt,speed){
 // Teacher particle graph: obstacle AABBs emit perimeter particles; movement follows exact particle positions.
 // The existing school score keeps desks blocked and walls pass-through.
 function buildTeacherParticleRoute(t,target){
+ // Sequential physical particles only: no graph, heap, BFS, or Dijkstra.
  const start=t.root.position.clone().setY(0),goal=target.clone().setY(0);
  if(start.distanceTo(goal)<.3)return [start,goal];
  if(!teacherGroundScore(start.x,start.z))return [];
@@ -250,36 +251,29 @@ function buildTeacherParticleRoute(t,target){
   let found=null;for(let r=.45;r<=3.6&&!found;r+=.45)for(let a=0;a<Math.PI*2;a+=Math.PI/8){const q=new THREE.Vector3(goal.x+Math.cos(a)*r,0,goal.z+Math.sin(a)*r);if(teacherGroundScore(q.x,q.z)){found=q;break}}
   if(found)goal.copy(found);else return [];
  }
- const nodes=[],seen=new Map();
- const add=(x,z)=>{if(!Number.isFinite(x)||!Number.isFinite(z)||!teacherGroundScore(x,z))return -1;const key=Math.round(x*4)+','+Math.round(z*4);if(seen.has(key))return seen.get(key);const id=nodes.length;seen.set(key,id);nodes.push(new THREE.Vector3(x,0,z));return id};
- const startId=add(start.x,start.z),goalId=add(goal.x,goal.z);if(startId<0||goalId<0||startId===goalId)return [start,goal];
- const length=start.distanceTo(goal),steps=Math.ceil(length/1.15);
- for(let i=1;i<steps;i++){const q=i/steps;add(start.x+(goal.x-start.x)*q,start.z+(goal.z-start.z)*q)}
- const sx=goal.x-start.x,sz=goal.z-start.z,seg2=sx*sx+sz*sz||1;
- for(const b of obstacles){
-  const cx=(b.min.x+b.max.x)*.5,cz=(b.min.z+b.max.z)*.5,u=Math.max(0,Math.min(1,((cx-start.x)*sx+(cz-start.z)*sz)/seg2));
-  if(Math.hypot(cx-(start.x+sx*u),cz-(start.z+sz*u))>8.5)continue;
-  const pad=.92,minX=b.min.x-pad,maxX=b.max.x+pad,minZ=b.min.z-pad,maxZ=b.max.z+pad;
-  const ring=[[minX,minZ],[minX+(maxX-minX)/3,minZ],[minX+2*(maxX-minX)/3,minZ],[maxX,minZ],[maxX,minZ+(maxZ-minZ)/3],[maxX,minZ+2*(maxZ-minZ)/3],[maxX,maxZ],[minX+2*(maxX-minX)/3,maxZ],[minX+(maxX-minX)/3,maxZ],[minX,maxZ],[minX,maxZ-(maxZ-minZ)/3],[minX,maxZ-2*(maxZ-minZ)/3]];
-  for(const q of ring)add(q[0],q[1]);
+ const route=[start.clone()],addSegmentParticles=(from,to)=>{const d=from.distanceTo(to),count=Math.max(1,Math.ceil(d/1.15));for(let i=1;i<=count;i++)route.push(from.clone().lerp(to,i/count))};
+ const sx=goal.x-start.x,sz=goal.z-start.z,seg2=sx*sx+sz*sz||1,hits=[];
+ for(const bounds of obstacles){
+  const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5,u=Math.max(0,Math.min(1,((cx-start.x)*sx+(cz-start.z)*sz)/seg2));
+  if(Math.hypot(cx-(start.x+sx*u),cz-(start.z+sz*u))>2.2)continue;
+  const pad=.9,minX=bounds.min.x-pad,maxX=bounds.max.x+pad,minZ=bounds.min.z-pad,maxZ=bounds.max.z+pad;let crossed=false;
+  for(let k=0;k<=12;k++){const q=k/12,x=start.x+sx*q,z=start.z+sz*q;if(x>=minX&&x<=maxX&&z>=minZ&&z<=maxZ){crossed=true;break}}
+  if(crossed)hits.push({u,minX,maxX,minZ,maxZ});
  }
- const bucketSize=4.2,buckets=new Map(),edges=nodes.map(()=>[]),bucketKey=(x,z)=>Math.floor(x/bucketSize)+','+Math.floor(z/bucketSize);
- for(let i=0;i<nodes.length;i++){const k=bucketKey(nodes[i].x,nodes[i].z);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(i)}
- for(let i=0;i<nodes.length;i++){
-  const a=nodes[i],bx=Math.floor(a.x/bucketSize),bz=Math.floor(a.z/bucketSize),near=[];
-  for(let oz=-1;oz<=1;oz++)for(let ox=-1;ox<=1;ox++)for(const j of buckets.get((bx+ox)+','+(bz+oz))||[]){if(j<=i)continue;const d=a.distanceTo(nodes[j]);if(d<=bucketSize&&d>.05)near.push({j,d})}
-  near.sort((a,b)=>a.d-b.d);let linked=0;
-  for(const n of near){if(linked>=10)break;if(!teacherSegmentClear(a.x,a.z,nodes[n.j].x,nodes[n.j].z))continue;edges[i].push({to:n.j,cost:n.d});edges[n.j].push({to:i,cost:n.d});linked++}
+ hits.sort((a,b)=>a.u-b.u);let cursor=start.clone();
+ for(const h of hits){
+  // Try fixed collision-bound perimeter particle sequences; use the first clear side.
+  const detours=[
+   [new THREE.Vector3(h.minX,0,h.minZ),new THREE.Vector3(h.minX,0,h.maxZ)],
+   [new THREE.Vector3(h.maxX,0,h.minZ),new THREE.Vector3(h.maxX,0,h.maxZ)],
+   [new THREE.Vector3(h.minX,0,h.minZ),new THREE.Vector3(h.maxX,0,h.minZ)],
+   [new THREE.Vector3(h.minX,0,h.maxZ),new THREE.Vector3(h.maxX,0,h.maxZ)]
+  ];let chosen=null;
+  for(const pair of detours){const [a,b]=pair;if(!teacherGroundScore(a.x,a.z)||!teacherGroundScore(b.x,b.z))continue;if(!teacherSegmentClear(cursor.x,cursor.z,a.x,a.z)||!teacherSegmentClear(a.x,a.z,b.x,b.z))continue;chosen=pair;break}
+  if(!chosen)continue;addSegmentParticles(cursor,chosen[0]);cursor=chosen[0].clone();addSegmentParticles(cursor,chosen[1]);cursor=chosen[1].clone();
  }
- const dist=new Float64Array(nodes.length);dist.fill(Infinity);const prev=new Int32Array(nodes.length);prev.fill(-1);const heap=[];
- const push=item=>{heap.push(item);let i=heap.length-1;while(i){const p=(i-1)>>1;if(heap[p].d<=item.d)break;heap[i]=heap[p];i=p}heap[i]=item};
- const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){let i=0;while(true){let c=i*2+1;if(c>=heap.length)break;if(c+1<heap.length&&heap[c+1].d<heap[c].d)c++;if(heap[c].d>=last.d)break;heap[i]=heap[c];i=c}heap[i]=last}return top};
- dist[startId]=0;push({id:startId,d:0});
- while(heap.length){const cur=pop();if(cur.d!==dist[cur.id])continue;if(cur.id===goalId)break;for(const edge of edges[cur.id]){const nd=cur.d+edge.cost;if(nd<dist[edge.to]){dist[edge.to]=nd;prev[edge.to]=cur.id;push({id:edge.to,d:nd})}}
- }
- if(!Number.isFinite(dist[goalId]))return [];
- const route=[];for(let id=goalId;id!==-1;id=prev[id]){route.push(nodes[id]);if(id===startId)break}
- if(route[route.length-1]!==nodes[startId])return [];route.reverse();return route;
+ if(!teacherSegmentClear(cursor.x,cursor.z,goal.x,goal.z))return [];
+ addSegmentParticles(cursor,goal);return route;
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),oldGoal=t.particleTarget;

@@ -58,7 +58,7 @@ function spawnItem(kind,x,z,save=true){if(save)initialItems.push({kind,x,z});con
 for(let i=0;i<38;i++)spawnItem(Math.random()<.7?'paper':'oreo',Math.random()*56-28,Math.random()*56-28);
 function loadTeacher(key){loader.load(assets[key],g=>{
  const root=g.scene;root.scale.setScalar(key==='circle'?1.15:1);root.position.set(key==='circle'?0:-12,0,key==='circle'?-15:-12);scene.add(root);
- const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),active:null,moveDir:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0};
+ const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),active:null,moveDir:new THREE.Vector3(),velocity:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0};
  teachers.push(t);teacherAnim(t,'idle');console.info('Teacher ready:',key,'clips:',g.animations.map(a=>a.name))
  },undefined,e=>console.warn('Teacher model failed',key,e))}
 loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
@@ -273,21 +273,38 @@ function steerTeacherWaypoints(t,target,dt,speed){
  if(!t.particleRoute?.length||!oldGoal||oldGoal.distanceTo(goal)>1.25||t.particleRouteBlocked||t.particleIndex>=t.particleRoute.length){
   t.particleRoute=buildTeacherParticleRoute(t,goal);t.particleIndex=1;t.particleTarget=goal.clone();t.particleRouteBlocked=false;t.particleRouteAt=elapsed;
  }
- const route=t.particleRoute;if(!route||route.length<2)return false;
- // Consume reached particles strictly in array order.
+ const route=t.particleRoute,velocity=t.velocity||(t.velocity=new THREE.Vector3());
+ if(!route||route.length<2){
+  const drag=Math.min(1,dt*9);velocity.multiplyScalar(1-drag);
+  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
+  return false;
+ }
+ // Advance through nearby particles in order while preserving momentum.
  while(t.particleIndex<route.length){
   const node=route[t.particleIndex];
-  if(Math.hypot(node.x-p.x,node.z-p.z)>.20)break;
-  p.x=node.x;p.z=node.z;t.particleIndex++;
+  if(Math.hypot(node.x-p.x,node.z-p.z)>.24)break;
+  t.particleIndex++;
  }
- if(t.particleIndex>=route.length)return false;
+ if(t.particleIndex>=route.length){
+  const drag=Math.min(1,dt*7);velocity.multiplyScalar(1-drag);
+  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
+  return velocity.lengthSq()>.0025;
+ }
  const waypoint=route[t.particleIndex],dx=waypoint.x-p.x,dz=waypoint.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.001){t.particleIndex++;return true}
- const vx=dx/dist,vz=dz/dist,travel=Math.min(Math.max(0,speed*dt),dist),nx=p.x+vx*travel,nz=p.z+vz*travel;
- if(!teacherSegmentClear(p.x,p.z,nx,nz)){t.particleRouteBlocked=true;return false}
- p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);
- if(dist<=travel+.02){p.x=waypoint.x;p.z=waypoint.z;t.particleIndex++}
- const angle=Math.atan2(vx,vz);
+ const acceleration=11.5,maxVelocity=Math.max(.1,speed);
+ const desiredSpeed=Math.min(maxVelocity,Math.sqrt(2*acceleration*Math.max(.02,dist-.12)));
+ const desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
+ let changeX=desiredX-velocity.x,changeZ=desiredZ-velocity.z;
+ const change=Math.hypot(changeX,changeZ),maxChange=acceleration*Math.max(0,dt);
+ if(change>maxChange&&change>0){const scale=maxChange/change;changeX*=scale;changeZ*=scale}
+ velocity.x+=changeX;velocity.z+=changeZ;
+ const nx=p.x+velocity.x*dt,nz=p.z+velocity.z*dt;
+ if(!teacherSegmentClear(p.x,p.z,nx,nz)){
+  velocity.set(0,0,0);t.particleRouteBlocked=true;return false;
+ }
+ p.x=nx;p.z=nz;t.moveDir.set(velocity.x,0,velocity.z);
+ const angle=Math.atan2(velocity.x,velocity.z);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
  return true;
 }

@@ -117,7 +117,8 @@ function buildTeacherBreadcrumbs(t,target){
    let revisit=false;for(let q=Math.max(0,route.length-22);q<route.length;q++)if(Math.hypot(route[q].x-nx,route[q].z-nz)<step*.72){revisit=true;break}if(revisit)continue;
    const progress=before-Math.hypot(goal.x-nx,goal.z-nz),turn=Math.abs(Math.atan2(Math.sin(a-lastAngle),Math.cos(a-lastAngle)));
    const goalAngle=Math.atan2(goal.x-cur.x,goal.z-cur.z);
-   const score=progress*4+Math.cos(a-goalAngle)*.22-turn*.10;
+   const retryBias=t.particleRetryBias||0;
+   const score=progress*4+Math.cos(a-goalAngle)*.22+Math.cos(a-(goalAngle+retryBias))*.16-turn*.10;
    if(score>bestScore){bestScore=score;best={x:nx,z:nz,a,progress}}
   }
   if(!best)break;if(best.progress<.015){if(++detour>34)break}else detour=0;
@@ -270,6 +271,19 @@ function buildTeacherParticleRoute(t,target){
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),oldGoal=t.particleTarget;
+ // Detect a genuine stall from measured world displacement, not velocity alone.
+ if(!t.progressCheckPosition){t.progressCheckPosition=p.clone();t.progressCheckAt=elapsed}
+ if(elapsed-(t.progressCheckAt||0)>.85){
+  const moved=p.distanceTo(t.progressCheckPosition),remaining=p.distanceTo(goal);
+  if(remaining>3.2&&moved<.16){
+   t.particleRetryCount=(t.particleRetryCount||0)+1;
+   const biases=[.85,-.85,1.45,-1.45,2.05,-2.05];
+   t.particleRetryBias=biases[(t.particleRetryCount-1)%biases.length];
+   const v=t.velocity||(t.velocity=new THREE.Vector3());v.multiplyScalar(.18);
+   t.particleRouteBlocked=true;t.particleIndex=1;
+  }else if(moved>.5)t.particleRetryBias=0;
+  t.progressCheckPosition.copy(p);t.progressCheckAt=elapsed;
+ }
  if(!t.particleRoute?.length||!oldGoal||oldGoal.distanceTo(goal)>1.25||t.particleRouteBlocked||t.particleIndex>=t.particleRoute.length){
   t.particleRoute=buildTeacherParticleRoute(t,goal);t.particleIndex=1;t.particleTarget=goal.clone();t.particleRouteBlocked=false;t.particleRouteAt=elapsed;
  }
@@ -301,7 +315,27 @@ function steerTeacherWaypoints(t,target,dt,speed){
  velocity.x+=changeX;velocity.z+=changeZ;
  const nx=p.x+velocity.x*dt,nz=p.z+velocity.z*dt;
  if(!teacherSegmentClear(p.x,p.z,nx,nz)){
-  velocity.set(0,0,0);t.particleRouteBlocked=true;return false;
+  // Preserve momentum by sliding along a clear axis instead of freezing on a corner.
+  const canX=Math.abs(velocity.x)>.001&&teacherSegmentClear(p.x,p.z,nx,p.z);
+  const canZ=Math.abs(velocity.z)>.001&&teacherSegmentClear(p.x,p.z,p.x,nz);
+  if(canX&&!canZ){p.x=nx;velocity.z*=.72}
+  else if(canZ&&!canX){p.z=nz;velocity.x*=.72}
+  else if(canX&&canZ){
+   if(Math.abs(velocity.x)>=Math.abs(velocity.z)){p.x=nx;velocity.z*=.72}
+   else{p.z=nz;velocity.x*=.72}
+  }else{
+   // Try a short tangent step in either direction before declaring the route blocked.
+   let slid=false;
+   for(const sign of [1,-1]){
+    const tx=-velocity.z*sign, tz=velocity.x*sign,mag=Math.hypot(tx,tz)||1,step=Math.min(speed*dt,.12);
+    const sx=p.x+tx/mag*step,sz=p.z+tz/mag*step;
+    if(teacherSegmentClear(p.x,p.z,sx,sz)){p.x=sx;p.z=sz;velocity.multiplyScalar(.82);slid=true;break}
+   }
+   if(!slid){velocity.multiplyScalar(.55);t.particleRouteBlocked=true}
+  }
+  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
+  t.moveDir.set(velocity.x,0,velocity.z);
+  return velocity.lengthSq()>.0025;
  }
  p.x=nx;p.z=nz;t.moveDir.set(velocity.x,0,velocity.z);
  const angle=Math.atan2(velocity.x,velocity.z);

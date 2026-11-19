@@ -282,15 +282,18 @@ function teacherGridRayClear(a,b){
  return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
 }
 function buildTeacherLocalGrid(t,target){
- const p=t.root.position,cell=TEACHER_GRID_CELL,radius=TEACHER_GRID_RADIUS;
+ const p=t.root.position,cell=TEACHER_GRID_CELL,radius=TEACHER_GRID_RADIUS,half=cell*.5;
  const cols=Math.ceil(radius*2/cell)+1,rows=cols;
  const minX=Math.floor((p.x-radius)/cell)*cell,minZ=Math.floor((p.z-radius)/cell)*cell;
  const nodes=new Array(cols*rows),dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
  for(let z=0;z<rows;z++)for(let x=0;x<cols;x++){
   const wx=minX+x*cell,wz=minZ+z*cell,id=z*cols+x;
-  nodes[id]={id,x:wx,z:wz,walkable:teacherGroundScore(wx,wz)===1,edges:[]};
+  // Every walkable cell is a square navigation polygon.
+  nodes[id]={id,x:wx,z:wz,walkable:teacherGroundScore(wx,wz)===1,
+   polygon:[{x:wx-half,z:wz-half},{x:wx+half,z:wz-half},{x:wx+half,z:wz+half},{x:wx-half,z:wz+half}],
+   edges:[],bridges:[]};
  }
- // Every walkable node raycasts toward its immediate neighbors; clear rays form bridges.
+ // Shared polygon edges become bridges only when their ray is unobstructed.
  for(const node of nodes){
   if(!node.walkable)continue;
   const gx=Math.round((node.x-minX)/cell),gz=Math.round((node.z-minZ)/cell);
@@ -300,10 +303,16 @@ function buildTeacherLocalGrid(t,target){
    const other=nodes[nz*cols+nx];
    if(!other?.walkable)continue;
    if(dx&&dz&&(!nodes[gz*cols+nx]?.walkable||!nodes[nz*cols+gx]?.walkable))continue;
-   if(teacherGridRayClear(node,other))node.edges.push(other.id);
+   if(!teacherGridRayClear(node,other))continue;
+   let a,b;
+   if(dx){const x=node.x+dx*half;a={x,z:node.z-half};b={x,z:node.z+half}}
+   else{const z=node.z+dz*half;a={x:node.x-half,z};b={x:node.x+half,z}}
+   if(dx&&dz){const corner={x:node.x+dx*half,z:node.z+dz*half};a=corner;b=corner}
+   node.edges.push(other.id);
+   node.bridges.push({to:other.id,a,b,midpoint:{x:(a.x+b.x)*.5,z:(a.z+b.z)*.5}});
   }
  }
- return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed};
+ return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed,type:'local-polygon-navmesh'};
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),grid=t.localGrid;
@@ -321,22 +330,23 @@ function steerTeacherWaypoints(t,target,dt,speed){
   if(d<currentDist){currentDist=d;current=n}
  }
  if(!current)return false;
- let candidates=current.edges.map(id=>nodes[id]).filter(n=>n?.walkable);
+ // Traverse through validated bridges between neighboring navmesh polygons.
+ let candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
  if(!candidates.length){t.localGridBlocked=true;return false}
  const previous=t.localGridLastNode;
- let forward=candidates.filter(n=>Math.hypot(goal.x-n.x,goal.z-n.z)<
+ let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
   Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
  if(previous&&candidates.length>1){
-  const notBack=candidates.filter(n=>Math.hypot(n.x-previous.x,n.z-previous.z)>.2);
-  if(notBack.length)forward=forward.filter(n=>notBack.includes(n));
+  const notBack=candidates.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
+  if(notBack.length)forward=forward.filter(c=>notBack.includes(c));
  }
  let pool=forward.length?forward:candidates;
  if(previous&&pool.length>1){
-  const notBack=pool.filter(n=>Math.hypot(n.x-previous.x,n.z-previous.z)>.2);
+  const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
   if(notBack.length)pool=notBack;
  }
- pool.sort((a,b)=>Math.hypot(goal.x-a.x,goal.z-a.z)-Math.hypot(goal.x-b.x,goal.z-b.z));
- const next=pool[0],dx=next.x-p.x,dz=next.z-p.z,dist=Math.hypot(dx,dz);
+ pool.sort((a,b)=>Math.hypot(goal.x-a.node.x,goal.z-a.node.z)-Math.hypot(goal.x-b.node.x,goal.z-b.node.z));
+ const next=pool[0].node,dx=next.x-p.x,dz=next.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};return true}
  const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
  if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){t.localGridBlocked=true;return false}

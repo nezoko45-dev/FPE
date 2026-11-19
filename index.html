@@ -3,7 +3,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;background:#111;color:#fff;font:15px system-ui}canvas{display:block}#hud{position:fixed;z-index:3;top:12px;left:12px;background:#101722dd;border:1px solid #ffffff35;border-radius:10px;padding:12px 16px;min-width:220px;line-height:1.65}#hud b{color:#ffe36a}#msg{color:#ff8c8c}#start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#10131beF}#panel{max-width:560px;padding:32px;background:#202635;border:1px solid #ffffff35;border-radius:16px;text-align:center}button{font:inherit;font-weight:700;padding:12px 24px;border:0;border-radius:9px;background:#f0d65a;color:#181818;cursor:pointer}#hint{opacity:.75;font-size:13px}
 </style></head><body>
-<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span><br><button id="particles" style="padding:6px 10px;margin-top:6px">Teacher Particles: OFF (R)</button> <button id="flowToggle" style="padding:6px 10px;margin-top:6px">Flowfield: OFF (G)</button></div>
+<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span><br><button id="particles" style="padding:6px 10px;margin-top:6px">Teacher Particles: OFF (R)</button> <button id="flowToggle" style="padding:6px 10px;margin-top:6px">Flowfield: OFF (G)</button> <button id="navmeshToggle" style="padding:6px 10px;margin-top:6px">Navmesh: OFF (H)</button></div>
 <div id="start"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><h2>REBUILT</h2><p>Fresh world architecture · same survival loop</p><p>Explore new chunks for papers and Oreos. Press E near pickups. Survive the teachers.</p><button id="play">NEW GAME</button><p id="hint">WASD move · Mouse look · Shift sprint · E collect / attack · Esc release mouse</p></div></div>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"}}
@@ -65,7 +65,57 @@ loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
 function teacherAnim(t,kind){if(!t||!t.mixer||!t.clips?.length)return;const patterns=kind==='attack'?['attack','hit','slap']:kind==='run'?['run','sprint']:kind==='walk'?['walk','move']:['idle','stand'];let clip=t.clips.find(a=>patterns.some(p=>a.name.toLowerCase().includes(p)));if(!clip)clip=t.clips[0];if(t.active===clip)return;t.mixer.stopAllAction();const action=t.mixer.clipAction(clip);action.reset().fadeIn(.18).play();t.active=clip;}
 // Expose animation controller on window so stale/isolated module callers can resolve it.
 window.teacherAnim=teacherAnim;
-let showFlowGizmos=false;const flowViz=new THREE.Group();scene.add(flowViz);let flowVizAt=0;function toggleFlow(){showFlowGizmos=!showFlowGizmos;document.querySelector('#flowToggle').textContent='Flowfield: '+(showFlowGizmos?'ON':'OFF')+' (G)';flowViz.visible=showFlowGizmos;if(showFlowGizmos)drawFlowGizmos()}document.querySelector('#flowToggle').onclick=toggleFlow;function drawFlowGizmos(){flowViz.clear();if(!showFlowGizmos)return;const fields=[];for(const t of teachers)if(t.root.userData.teacherFlow)fields.push({f:t.root.userData.teacherFlow,color:0xff5555});for(const s of survivors)if(!s.dead&&s.root.userData.collectFlow)fields.push({f:s.root.userData.collectFlow,color:0x55ddff});for(const {f,color} of fields){const positions=[];const stride=Math.max(2,Math.floor(2.5/f.cell));for(let z=0;z<f.rows;z+=stride)for(let x=0;x<f.cols;x+=stride){const id=z*f.cols+x,dx=f.vx[id],dz=f.vz[id];if((!dx&&!dz)||f.dist[id]<0)continue;const m=Math.hypot(dx,dz);if(!m)continue;const px=f.minX+(x+.5)*f.cell,pz=f.minZ+(z+.5)*f.cell,len=f.cell*.65,ex=px+dx/m*len,ez=pz+dz/m*len,tip=.22,tx=-dz/m,tz=dx/m;positions.push(px,.08,pz,ex,.08,ez,ex,.08,ez,ex-dx/m*tip+tx*tip*.55,.08,ez-dz/m*tip+tz*tip*.55,ex,.08,ez,ex-dx/m*tip-tx*tip*.55,.08,ez-dz/m*tip-tz*tip*.55)}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));flowViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.8})))}}let showTeacherParticles=false;const teacherParticleViz=new THREE.Group();scene.add(teacherParticleViz);let teacherParticleVizAt=0;function toggleTeacherParticles(){showTeacherParticles=!showTeacherParticles;document.querySelector('#particles').textContent='Teacher Particles: '+(showTeacherParticles?'ON':'OFF')+' (R)';teacherParticleViz.visible=showTeacherParticles;if(showTeacherParticles)drawTeacherParticleViz()}document.querySelector('#particles').onclick=toggleTeacherParticles;function drawTeacherParticleViz(){teacherParticleViz.clear();if(!showTeacherParticles)return;for(const t of teachers){const route=t.particleRoute;if(!route?.length)continue;const pts=route.map(p=>new THREE.Vector3(p.x,.12,p.z));const geo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x46e8ff,transparent:true,opacity:.9})));const dotGeo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Points(dotGeo,new THREE.PointsMaterial({color:0x9aff75,size:.19,sizeAttenuation:true})))}}const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE'){collectNearby();attack();}if(e.code==='KeyR')toggleTeacherParticles();if(e.code==='KeyG')toggleFlow()});addEventListener('keyup',e=>keys[e.code]=false);
+let showTeacherNavmesh=false;const teacherNavmeshViz=new THREE.Group();scene.add(teacherNavmeshViz);let teacherNavmeshVizAt=0;
+function toggleTeacherNavmesh(){
+ showTeacherNavmesh=!showTeacherNavmesh;
+ const button=document.querySelector('#navmeshToggle');
+ button.textContent='Navmesh: '+(showTeacherNavmesh?'ON':'OFF')+' (H)';
+ teacherNavmeshViz.visible=showTeacherNavmesh;
+ if(showTeacherNavmesh)drawTeacherNavmesh();
+}
+document.querySelector('#navmeshToggle').onclick=toggleTeacherNavmesh;
+function clearTeacherNavmeshViz(){
+ for(const child of teacherNavmeshViz.children){
+  child.geometry?.dispose();
+  if(Array.isArray(child.material))child.material.forEach(m=>m.dispose());else child.material?.dispose();
+ }
+ teacherNavmeshViz.clear();
+}
+function drawTeacherNavmesh(){
+ clearTeacherNavmeshViz();if(!showTeacherNavmesh)return;
+ const colors=[0x49e6ff,0xff6b9d,0xffdf59];
+ teachers.forEach((t,index)=>{
+  const grid=t.localGrid,nodes=grid?.nodes;if(!nodes?.length)return;
+  const polygonLines=[],portalLines=[],centers=[];
+  const color=colors[index%colors.length];
+  for(const node of nodes){
+   const poly=node.polygon;if(!poly?.length)continue;
+   for(let k=0;k<poly.length;k++){
+    const a=poly[k],b=poly[(k+1)%poly.length];
+    polygonLines.push(a.x,.10,a.z,b.x,.10,b.z);
+   }
+   centers.push(node.x,.13,node.z);
+   for(const bridge of node.bridges||[]){
+    if(node.id>bridge.to)continue;
+    const a=bridge.a,b=bridge.b;
+    portalLines.push(a.x,.16,a.z,b.x,.16,b.z);
+   }
+  }
+  if(polygonLines.length){
+   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(polygonLines,3));
+   teacherNavmeshViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.58})));
+  }
+  if(portalLines.length){
+   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(portalLines,3));
+   teacherNavmeshViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.95})));
+  }
+  if(centers.length){
+   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(centers,3));
+   teacherNavmeshViz.add(new THREE.Points(geo,new THREE.PointsMaterial({color,size:.055,sizeAttenuation:true})));
+  }
+ });
+}
+let showFlowGizmos=false;const flowViz=new THREE.Group();scene.add(flowViz);let flowVizAt=0;function toggleFlow(){showFlowGizmos=!showFlowGizmos;document.querySelector('#flowToggle').textContent='Flowfield: '+(showFlowGizmos?'ON':'OFF')+' (G)';flowViz.visible=showFlowGizmos;if(showFlowGizmos)drawFlowGizmos()}document.querySelector('#flowToggle').onclick=toggleFlow;function drawFlowGizmos(){flowViz.clear();if(!showFlowGizmos)return;const fields=[];for(const t of teachers)if(t.root.userData.teacherFlow)fields.push({f:t.root.userData.teacherFlow,color:0xff5555});for(const s of survivors)if(!s.dead&&s.root.userData.collectFlow)fields.push({f:s.root.userData.collectFlow,color:0x55ddff});for(const {f,color} of fields){const positions=[];const stride=Math.max(2,Math.floor(2.5/f.cell));for(let z=0;z<f.rows;z+=stride)for(let x=0;x<f.cols;x+=stride){const id=z*f.cols+x,dx=f.vx[id],dz=f.vz[id];if((!dx&&!dz)||f.dist[id]<0)continue;const m=Math.hypot(dx,dz);if(!m)continue;const px=f.minX+(x+.5)*f.cell,pz=f.minZ+(z+.5)*f.cell,len=f.cell*.65,ex=px+dx/m*len,ez=pz+dz/m*len,tip=.22,tx=-dz/m,tz=dx/m;positions.push(px,.08,pz,ex,.08,ez,ex,.08,ez,ex-dx/m*tip+tx*tip*.55,.08,ez-dz/m*tip+tz*tip*.55,ex,.08,ez,ex-dx/m*tip-tx*tip*.55,.08,ez-dz/m*tip-tz*tip*.55)}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));flowViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.8})))}}let showTeacherParticles=false;const teacherParticleViz=new THREE.Group();scene.add(teacherParticleViz);let teacherParticleVizAt=0;function toggleTeacherParticles(){showTeacherParticles=!showTeacherParticles;document.querySelector('#particles').textContent='Teacher Particles: '+(showTeacherParticles?'ON':'OFF')+' (R)';teacherParticleViz.visible=showTeacherParticles;if(showTeacherParticles)drawTeacherParticleViz()}document.querySelector('#particles').onclick=toggleTeacherParticles;function drawTeacherParticleViz(){teacherParticleViz.clear();if(!showTeacherParticles)return;for(const t of teachers){const route=t.particleRoute;if(!route?.length)continue;const pts=route.map(p=>new THREE.Vector3(p.x,.12,p.z));const geo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x46e8ff,transparent:true,opacity:.9})));const dotGeo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Points(dotGeo,new THREE.PointsMaterial({color:0x9aff75,size:.19,sizeAttenuation:true})))}}const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE'){collectNearby();attack();}if(e.code==='KeyR')toggleTeacherParticles();if(e.code==='KeyG')toggleFlow();if(e.code==='KeyH')toggleTeacherNavmesh()});addEventListener('keyup',e=>keys[e.code]=false);
 let locked=false;renderer.domElement.addEventListener('click',()=>{if(started)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked||!started)return;player.yaw-=e.movementX*.0022;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.35,Math.min(1.35,player.pitch));camera.rotation.set(player.pitch,player.yaw,0)});
 function collectNearby(){
@@ -490,7 +540,7 @@ for(const s of survivors){
  }
  s.phase+=dt*5;const swing=Math.sin(s.phase)*.55;s.legs[0].rotation.x=swing;s.legs[1].rotation.x=-swing;s.arms[0].rotation.x=-swing*.7;s.arms[1].rotation.x=swing*.7;s.root.position.y=Math.abs(Math.sin(s.phase))*.045
 }
-for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flowVizAt>.5){drawFlowGizmos();flowVizAt=elapsed}if(showTeacherParticles&&elapsed-teacherParticleVizAt>.35){drawTeacherParticleViz();teacherParticleVizAt=elapsed}if(showTeacherParticles&&elapsed-teacherParticleVizAt>.35){drawTeacherParticleViz();teacherParticleVizAt=elapsed}
+for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flowVizAt>.5){drawFlowGizmos();flowVizAt=elapsed}if(showTeacherParticles&&elapsed-teacherParticleVizAt>.35){drawTeacherParticleViz();teacherParticleVizAt=elapsed}if(showTeacherNavmesh&&elapsed-teacherNavmeshVizAt>.35){drawTeacherNavmesh();teacherNavmeshVizAt=elapsed}
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 

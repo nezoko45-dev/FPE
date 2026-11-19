@@ -468,12 +468,47 @@ function steerTeacherWaypoints(t,target,dt,speed){
   t.polygonBlockedPortals??=new Set();
   return true;
  }
- // If direct movement is blocked, preserve the DFS route and keep following
- // portals around the obstruction instead of resetting to the same corner.
+ // If direct movement is blocked or target LOS is lost, pursue the target
+ // through the polygon graph. Keep the last-known target position so a brief
+ // occlusion does not make teachers abandon pursuit and freeze in exploration.
  t.teacherLostTargetLOS=true;
- // Exhaustively traverse every portal-connected polygon with depth-first
- // exploration. Never switch to a short target-biased route after a few rooms.
+ t.lastKnownTarget??=new THREE.Vector3(target.x,0,target.z);
+ if(teacherHasLineOfSight(t,target))t.lastKnownTarget.set(target.x,0,target.z);
+ // Find the target's destination polygon and plan a portal route through the
+ // connected navmesh. A* uses portal-to-portal distance, not arbitrary corners.
+ const targetNode=nodes.find(n=>teacherPointInPolygon(target.x,target.z,n.polygon))||
+  nodes.reduce((best,n)=>!best||(n.x-target.x)**2+(n.z-target.z)**2<(best.x-target.x)**2+(best.z-target.z)**2?n:best,null);
  t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;t.polygonBlockedPortals??=new Set();
+ if(targetNode){
+  const routeKey=current.polygonKey+'>'+targetNode.polygonKey;
+  if(t.targetPolygonRouteKey!==routeKey||elapsed>=(t.targetPolygonRouteAt||0)){
+   const open=[current],came=new Map(),g=new Map([[current.id,0]]),f=new Map([[current.id,Math.hypot(current.x-targetNode.x,current.z-targetNode.z)] ]),closed=new Set();
+   while(open.length){
+    open.sort((a,b)=>(f.get(a.id)??Infinity)-(f.get(b.id)??Infinity));
+    const at=open.shift();if(at.id===targetNode.id)break;closed.add(at.id);
+    for(const link of at.bridges||[]){
+     const next=nodes[link.to];if(!next||closed.has(next.id)||t.polygonBlockedPortals.has(at.polygonKey+'>'+next.polygonKey))continue;
+     const cost=(g.get(at.id)??Infinity)+Math.hypot(next.x-at.x,next.z-at.z);
+     if(cost<(g.get(next.id)??Infinity)){came.set(next.id,at.id);g.set(next.id,cost);f.set(next.id,cost+Math.hypot(next.x-targetNode.x,next.z-targetNode.z));if(!open.some(n=>n.id===next.id))open.push(next)}
+    }
+   }
+   const ids=[];let cursor=targetNode.id,guard=0;
+   if(cursor===current.id)ids.push(cursor);
+   else while(came.has(cursor)&&guard++<nodes.length){ids.push(cursor);cursor=came.get(cursor);if(cursor===current.id){ids.push(cursor);break}}
+   ids.reverse();
+   t.targetPolygonRoute=ids.map(id=>nodes[id]?.polygonKey).filter(Boolean);
+   t.targetPolygonRouteKey=routeKey;t.targetPolygonRouteAt=elapsed+.45;
+  }
+  const route=t.targetPolygonRoute||[];
+  if(route.length>1&&route[0]===current.polygonKey){
+   t.polygonVisitGoal=route[1];
+   t.polygonProgressGoal=t.polygonVisitGoal;
+   t.polygonProgressAt=elapsed;t.polygonProgressPos.copy(p);
+  }
+ }
+ // Keep the independent exploration score available as a fallback if the
+ // target polygon is disconnected or no valid portal route can be found.
+ 
  // Every polygon receives a simple exploration score: unvisited = 1, visited = 0.
  // Teachers always prefer the highest-scoring reachable neighbor; visited polygons
  // remain available only for retracing the DFS route to an unexplored frontier.

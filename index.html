@@ -362,7 +362,9 @@ function steerTeacherWaypoints(t,target,dt,speed){
  }
  pool.sort((a,b)=>Math.hypot(goal.x-a.node.x,goal.z-a.node.z)-Math.hypot(goal.x-b.node.x,goal.z-b.node.z));
  const chosen=pool[0],next=chosen.node,portal=chosen.link.midpoint;
- const aim=portal||next,dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
+ const crossLen=Math.hypot(next.x-(portal?.x??next.x),next.z-(portal?.z??next.z))||1;
+ const aim=portal?{x:portal.x+(next.x-portal.x)/crossLen*.38,z:portal.z+(next.z-portal.z)/crossLen*.38}:next;
+ const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};return true}
  const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
  if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){t.localGridBlocked=true;return false}

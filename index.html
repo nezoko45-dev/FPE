@@ -338,15 +338,21 @@ function steerTeacherWaypoints(t,target,dt,speed){
  const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
   Math.hypot(goal.x-grid.targetX,goal.z-grid.targetZ)>2.2||
   elapsed-grid.builtAt>1.1||t.localGridBlocked;
- if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridBlocked=false}
+ if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridIndex=0;t.localGridBlocked=false}
  const path=t.localGrid?.path;
  if(!path?.length){t.localGridBlocked=true;return false}
  // Follow the ordered node bridges. Rebuild the local grid as the teacher moves.
  let index=t.localGridIndex||0;
- while(index<path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)index++;
- t.localGridIndex=index;
- let waypoint=path[Math.min(index+1,path.length-1)];
- if(index>=path.length-1)waypoint=path[path.length-1];
+ // First connect the teacher's current position to its nearest local-grid node.
+ if(index===0&&Math.hypot(path[0].x-p.x,path[0].z-p.z)>.35){
+  t.localGridIndex=0;
+ }else{
+  while(index<path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)index++;
+  t.localGridIndex=index;
+ }
+ let waypoint=index===0&&Math.hypot(path[0].x-p.x,path[0].z-p.z)>.35
+  ?path[0]:path[Math.min(index+1,path.length-1)];
+ if(index>=path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)waypoint=path[index];
  const dx=waypoint.x-p.x,dz=waypoint.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.08){t.localGridBlocked=true;return false}
  const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;

@@ -19,9 +19,9 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 // No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
-const obstacles=[],steeringBounds=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
-function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);o.userData.avoidVector=true}return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;steeringBounds.push(new THREE.Box3().setFromObject(o));return o}
+const obstacles=[],steeringBounds=[],navBlockers=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
+function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);navBlockers.push(o);o.userData.avoidVector=true}return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
 if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
@@ -269,76 +269,93 @@ function buildTeacherParticleRoute(t,target){
  if(cur.distanceTo(goal)<=stride*1.35&&teacherGroundScore(goal.x,goal.z)===1&&teacherSegmentClear(cur.x,cur.z,goal.x,goal.z)&&cur.distanceTo(goal)>.08)route.push(goal.clone());
  return route;
 }
-function steerTeacherWaypoints(t,target,dt,speed){
- const p=t.root.position,goal=target.clone().setY(0),oldGoal=t.particleTarget;
- // Detect a genuine stall from measured world displacement, not velocity alone.
- if(!t.progressCheckPosition){t.progressCheckPosition=p.clone();t.progressCheckAt=elapsed}
- if(elapsed-(t.progressCheckAt||0)>.85){
-  const moved=p.distanceTo(t.progressCheckPosition),remaining=p.distanceTo(goal);
-  if(remaining>3.2&&moved<.16){
-   t.particleRetryCount=(t.particleRetryCount||0)+1;
-   const biases=[.85,-.85,1.45,-1.45,2.05,-2.05];
-   t.particleRetryBias=biases[(t.particleRetryCount-1)%biases.length];
-   const v=t.velocity||(t.velocity=new THREE.Vector3());v.multiplyScalar(.18);
-   t.particleRouteBlocked=true;t.particleIndex=1;
-  }else if(moved>.5)t.particleRetryBias=0;
-  t.progressCheckPosition.copy(p);t.progressCheckAt=elapsed;
+// Each teacher owns a moving local grid. Neighboring nodes are connected only
+// when a real Three.js raycast can travel between them without hitting geometry.
+const TEACHER_GRID_CELL=1.35,TEACHER_GRID_RADIUS=18;
+const teacherGridRaycaster=new THREE.Raycaster();
+function teacherGridRayClear(a,b){
+ const from=new THREE.Vector3(a.x,.78,a.z),to=new THREE.Vector3(b.x,.78,b.z);
+ const delta=to.clone().sub(from),distance=delta.length();
+ if(distance<.001)return true;
+ teacherGridRaycaster.set(from,delta.normalize());
+ teacherGridRaycaster.far=Math.max(0,distance-.035);
+ return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
+}
+function buildTeacherLocalGrid(t,target){
+ const p=t.root.position,cell=TEACHER_GRID_CELL,radius=TEACHER_GRID_RADIUS;
+ const cols=Math.ceil(radius*2/cell)+1,rows=cols;
+ const minX=Math.floor((p.x-radius)/cell)*cell,minZ=Math.floor((p.z-radius)/cell)*cell;
+ const nodes=new Array(cols*rows),dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+ for(let z=0;z<rows;z++)for(let x=0;x<cols;x++){
+  const wx=minX+x*cell,wz=minZ+z*cell,id=z*cols+x;
+  const walkable=teacherGroundScore(wx,wz)===1;
+  nodes[id]={id,x:wx,z:wz,walkable,edges:[]};
  }
- if(!t.particleRoute?.length||!oldGoal||oldGoal.distanceTo(goal)>1.25||t.particleRouteBlocked||t.particleIndex>=t.particleRoute.length){
-  t.particleRoute=buildTeacherParticleRoute(t,goal);t.particleIndex=1;t.particleTarget=goal.clone();t.particleRouteBlocked=false;t.particleRouteAt=elapsed;
- }
- const route=t.particleRoute,velocity=t.velocity||(t.velocity=new THREE.Vector3());
- if(!route||route.length<2){
-  const drag=Math.min(1,dt*9);velocity.multiplyScalar(1-drag);
-  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
-  return false;
- }
- // Advance through nearby particles in order while preserving momentum.
- while(t.particleIndex<route.length){
-  const node=route[t.particleIndex];
-  if(Math.hypot(node.x-p.x,node.z-p.z)>.24)break;
-  t.particleIndex++;
- }
- if(t.particleIndex>=route.length){
-  const drag=Math.min(1,dt*7);velocity.multiplyScalar(1-drag);
-  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
-  return velocity.lengthSq()>.0025;
- }
- const waypoint=route[t.particleIndex],dx=waypoint.x-p.x,dz=waypoint.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.001){t.particleIndex++;return true}
- const acceleration=11.5,maxVelocity=Math.max(.1,speed);
- const desiredSpeed=Math.min(maxVelocity,Math.sqrt(2*acceleration*Math.max(.02,dist-.12)));
- const desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
- let changeX=desiredX-velocity.x,changeZ=desiredZ-velocity.z;
- const change=Math.hypot(changeX,changeZ),maxChange=acceleration*Math.max(0,dt);
- if(change>maxChange&&change>0){const scale=maxChange/change;changeX*=scale;changeZ*=scale}
- velocity.x+=changeX;velocity.z+=changeZ;
- const nx=p.x+velocity.x*dt,nz=p.z+velocity.z*dt;
- if(!teacherSegmentClear(p.x,p.z,nx,nz)){
-  // Preserve momentum by sliding along a clear axis instead of freezing on a corner.
-  const canX=Math.abs(velocity.x)>.001&&teacherSegmentClear(p.x,p.z,nx,p.z);
-  const canZ=Math.abs(velocity.z)>.001&&teacherSegmentClear(p.x,p.z,p.x,nz);
-  if(canX&&!canZ){p.x=nx;velocity.z*=.72}
-  else if(canZ&&!canX){p.z=nz;velocity.x*=.72}
-  else if(canX&&canZ){
-   if(Math.abs(velocity.x)>=Math.abs(velocity.z)){p.x=nx;velocity.z*=.72}
-   else{p.z=nz;velocity.x*=.72}
-  }else{
-   // Try a short tangent step in either direction before declaring the route blocked.
-   let slid=false;
-   for(const sign of [1,-1]){
-    const tx=-velocity.z*sign, tz=velocity.x*sign,mag=Math.hypot(tx,tz)||1,step=Math.min(speed*dt,.12);
-    const sx=p.x+tx/mag*step,sz=p.z+tz/mag*step;
-    if(teacherSegmentClear(p.x,p.z,sx,sz)){p.x=sx;p.z=sz;velocity.multiplyScalar(.82);slid=true;break}
+ // Shoot a bridge ray from each walkable node toward each neighboring node.
+ for(const node of nodes){
+  if(!node.walkable)continue;
+  const gx=Math.round((node.x-minX)/cell),gz=Math.round((node.z-minZ)/cell);
+  for(const [dx,dz] of dirs){
+   const nx=gx+dx,nz=gz+dz;
+   if(nx<0||nz<0||nx>=cols||nz>=rows)continue;
+   const other=nodes[nz*cols+nx];
+   if(!other?.walkable)continue;
+   // Diagonal bridges may not cut through a blocked corner.
+   if(dx&&dz){
+    const sideA=nodes[gz*cols+nx],sideB=nodes[nz*cols+gx];
+    if(!sideA?.walkable||!sideB?.walkable)continue;
    }
-   if(!slid){velocity.multiplyScalar(.55);t.particleRouteBlocked=true}
+   if(teacherGridRayClear(node,other))node.edges.push(other.id);
   }
-  if(velocity.lengthSq()<.0025)velocity.set(0,0,0);
-  t.moveDir.set(velocity.x,0,velocity.z);
-  return velocity.lengthSq()>.0025;
  }
- p.x=nx;p.z=nz;t.moveDir.set(velocity.x,0,velocity.z);
- const angle=Math.atan2(velocity.x,velocity.z);
+ const tx=Math.max(0,Math.min(cols-1,Math.round((target.x-minX)/cell)));
+ const tz=Math.max(0,Math.min(rows-1,Math.round((target.z-minZ)/cell)));
+ let goal=nodes[tz*cols+tx];
+ if(!goal?.walkable){
+  let nearest=null,best=Infinity;
+  for(const n of nodes)if(n.walkable){const d=(n.x-target.x)**2+(n.z-target.z)**2;if(d<best){best=d;nearest=n}}
+  goal=nearest;
+ }
+ let startNode=null,startDist=Infinity;
+ for(const n of nodes)if(n.walkable){const d=(n.x-p.x)**2+(n.z-p.z)**2;if(d<startDist){startDist=d;startNode=n}}
+ if(!startNode||!goal)return null;
+ // Breadth-first traversal over the ray-validated bridges.
+ const previous=new Int32Array(nodes.length);previous.fill(-1);
+ const seen=new Uint8Array(nodes.length),queue=new Int32Array(nodes.length);
+ let head=0,tail=0;queue[tail++]=startNode.id;seen[startNode.id]=1;
+ while(head<tail&&!seen[goal.id]){
+  const id=queue[head++],node=nodes[id];
+  for(const next of node.edges)if(!seen[next]){seen[next]=1;previous[next]=id;queue[tail++]=next}
+ }
+ if(!seen[goal.id])return null;
+ const path=[];let at=goal.id;
+ while(at!==-1){path.push(nodes[at]);if(at===startNode.id)break;at=previous[at]}
+ path.reverse();
+ return {path,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed};
+}
+function steerTeacherWaypoints(t,target,dt,speed){
+ const p=t.root.position,goal=target.clone().setY(0),grid=t.localGrid;
+ const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
+  Math.hypot(goal.x-grid.targetX,goal.z-grid.targetZ)>2.2||
+  elapsed-grid.builtAt>1.1||t.localGridBlocked;
+ if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridBlocked=false}
+ const path=t.localGrid?.path;
+ if(!path?.length){t.localGridBlocked=true;return false}
+ // Follow the ordered node bridges. Rebuild the local grid as the teacher moves.
+ let index=t.localGridIndex||0;
+ while(index<path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)index++;
+ t.localGridIndex=index;
+ let waypoint=path[Math.min(index+1,path.length-1)];
+ if(index>=path.length-1)waypoint=path[path.length-1];
+ const dx=waypoint.x-p.x,dz=waypoint.z-p.z,dist=Math.hypot(dx,dz);
+ if(dist<.08){t.localGridBlocked=true;return false}
+ const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
+ // Final movement is guarded by the same bridge ray test; never cross an unverified edge.
+ if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
+  t.localGridBlocked=true;t.localGridIndex=0;return false;
+ }
+ p.x=nx;p.z=nz;t.moveDir.set(dx/dist,0,dz/dist);
+ const angle=Math.atan2(dx,dz);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
  return true;
 }
@@ -461,7 +478,7 @@ for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flow
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.set((i-1.5)*3,0,7+i);s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.set((i-1.5)*3,0,7+i);s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.localGrid=null;t.localGridIndex=0;t.localGridBlocked=false;t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

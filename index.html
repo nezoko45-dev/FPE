@@ -474,6 +474,10 @@ function steerTeacherWaypoints(t,target,dt,speed){
  // Exhaustively traverse every portal-connected polygon with depth-first
  // exploration. Never switch to a short target-biased route after a few rooms.
  t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;t.polygonBlockedPortals??=new Set();
+ // Every polygon receives a simple exploration score: unvisited = 1, visited = 0.
+ // Teachers always prefer the highest-scoring reachable neighbor; visited polygons
+ // remain available only for retracing the DFS route to an unexplored frontier.
+ const polygonScore=node=>t.visitedPolygons.has(node.polygonKey)?0:1;
  // Detect a teacher repeatedly trying to cross the same unreachable portal.
  // After 1.25s without meaningful movement, blacklist only that directed edge
  // and let DFS select another branch instead of orbiting the same corner.
@@ -496,8 +500,8 @@ function steerTeacherWaypoints(t,target,dt,speed){
    .filter(v=>v.node);
   const seed=t.key==='circle'?1:t.key==='thavel'?2:3;
   const order=(id)=>((Math.imul(id+1,2654435761)^Math.imul(seed,2246822519))>>>0);
-  const unvisited=adjacent.filter(v=>!t.visitedPolygons.has(v.node.polygonKey)&&!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
-   .sort((a,b)=>order(a.node.id)-order(b.node.id));
+  const unvisited=adjacent.filter(v=>polygonScore(v.node)===1&&!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
+   .sort((a,b)=>polygonScore(b.node)-polygonScore(a.node)||order(a.node.id)-order(b.node.id));
   if(unvisited.length){
    // Visit every unvisited branch before returning to the parent.
    t.polygonVisitPath.push(current.polygonKey);
@@ -513,14 +517,14 @@ function steerTeacherWaypoints(t,target,dt,speed){
    // frontier, but teachers never choose them as fresh search goals.
    // Refresh the entire blocked map only after every polygon in the global
    // navmesh has been visited (not merely when one branch/component ends).
-   const allPolygonsBlocked=nodes.every(node=>t.visitedPolygons.has(node.polygonKey));
+   const allPolygonsBlocked=nodes.every(node=>polygonScore(node)===0);
    if(allPolygonsBlocked){
     t.visitedPolygons.clear();
     t.polygonBlockedPortals.clear();
     t.polygonVisitPath.length=0;
     t.visitedPolygons.add(current.polygonKey);
-    const next=adjacent.filter(v=>!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
-     .sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
+    const next=adjacent.filter(v=>polygonScore(v.node)===1&&!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
+     .sort((a,b)=>polygonScore(b.node)-polygonScore(a.node)||order(a.node.id)-order(b.node.id))[0];
     if(next){
      t.polygonVisitPath.push(current.polygonKey);
      t.polygonVisitGoal=next.node.polygonKey;
@@ -528,9 +532,9 @@ function steerTeacherWaypoints(t,target,dt,speed){
    }else{
     // A disconnected/unreached area remains: keep the current visited
     // polygons blocked and retry an unvisited adjacent frontier next frame.
-    const frontier=adjacent.filter(v=>!t.visitedPolygons.has(v.node.polygonKey)&&
+    const frontier=adjacent.filter(v=>polygonScore(v.node)===1&&
       !t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
-     .sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
+     .sort((a,b)=>polygonScore(b.node)-polygonScore(a.node)||order(a.node.id)-order(b.node.id))[0];
     if(frontier){
      t.polygonVisitPath.push(current.polygonKey);
      t.polygonVisitGoal=frontier.node.polygonKey;

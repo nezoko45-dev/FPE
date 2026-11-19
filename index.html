@@ -359,7 +359,14 @@ function buildTeacherLocalGrid(t,target){
  // Shared triangle edges are later stitched into portals.
  for(let z=0;z<rows;z++)for(let x=0;x<cols;x++){
   const wx=minX+x*cell,wz=minZ+z*cell;
-  if(teacherGroundScore(wx,wz)!==1)continue;
+  // A polygon cell is walkable only when its full footprint has clearance,
+  // not merely when its center happens to fall outside an object's outline box.
+  const samples=[
+   [wx,wz],[wx-half,wz-half],[wx+half,wz-half],
+   [wx+half,wz+half],[wx-half,wz+half],
+   [wx,wz-half],[wx+half,wz],[wx,wz+half],[wx-half,wz]
+  ];
+  if(samples.some(([sx,sz])=>teacherGroundScore(sx,sz)!==1))continue;
   const bl={x:wx-half,z:wz-half},br={x:wx+half,z:wz-half},
    tr={x:wx+half,z:wz+half},tl={x:wx-half,z:wz+half},cellId=z*cols+x;
   addTriangle(wx,wz,[bl,br,tr],cellId);

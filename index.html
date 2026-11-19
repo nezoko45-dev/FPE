@@ -422,7 +422,7 @@ function steerTeacherWaypoints(t,target,dt,speed){
   (t.localGridRetryAt!==undefined&&elapsed>=t.localGridRetryAt);
  if(needsGrid){
   t.localGrid=buildTeacherLocalGrid(t,rawGoal);
-  t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null;t.localGridPortalLock=null;
+  t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null;t.localGridPortalLock=null;t.localGridDetour=null;
  }
  const nodes=t.localGrid?.nodes;
  if(!nodes?.length){brakeTeacher(t,dt);return false;}
@@ -458,25 +458,61 @@ function steerTeacherWaypoints(t,target,dt,speed){
  }
  if(!chosen){
   const previous=t.localGridLastNode;
+  const currentGoalDistance=Math.hypot(goal.x-current.x,goal.z-current.z);
   let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
-   Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
+   currentGoalDistance-.015);
   if(previous&&candidates.length>1){
    const notBack=candidates.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
    if(notBack.length)forward=forward.filter(c=>notBack.includes(c));
   }
-  let pool=forward.length?forward:candidates;
-  if(previous&&pool.length>1){
-   const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-   if(notBack.length)pool=notBack;
+  // If greedy progress ends at an obstacle, switch to persistent one-sided
+  // portal following. This walks around the boundary instead of bouncing
+  // between the same two triangles. It uses only immediate bridge neighbors.
+  let detour=t.localGridDetour;
+  if(detour&&currentGoalDistance<detour.startDistance-.7){
+   detour=null;t.localGridDetour=null;
   }
-  pool.sort((a,b)=>{
-   const da=Math.hypot(goal.x-a.node.x,goal.z-a.node.z);
-   const db=Math.hypot(goal.x-b.node.x,goal.z-b.node.z);
-   if(Math.abs(da-db)>.025)return da-db;
-   const heading=t.velocity?.lengthSq()>.01?t.velocity: t.moveDir;
-   const align=c=>{const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z,l=Math.hypot(dx,dz)||1;return (dx*heading.x+dz*heading.z)/l};
-   return align(b)-align(a)||a.node.id-b.node.id;
-  });
+  if(!forward.length&&!detour){
+   const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
+   const cross=heading.x*(goal.z-current.z)-heading.z*(goal.x-current.x);
+   detour={side:cross>=0?1:-1,startDistance:currentGoalDistance,startedAt:elapsed};
+   t.localGridDetour=detour;
+  }
+  let pool;
+  if(detour){
+   // Keep following the same side until the route makes real goal progress.
+   const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
+   const headingAngle=Math.atan2(heading.x,heading.z);
+   const turnFor=c=>{
+    const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z;
+    const a=Math.atan2(dx,dz);
+    return Math.atan2(Math.sin(a-headingAngle),Math.cos(a-headingAngle));
+   };
+   const notBack=candidates.filter(c=>!previous||Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
+   pool=(notBack.length?notBack:candidates).slice().sort((a,b)=>{
+    const ta=turnFor(a),tb=turnFor(b),sa=Math.sign(ta||detour.side),sb=Math.sign(tb||detour.side);
+    const pa=sa===detour.side?0:1,pb=sb===detour.side?0:1;
+    return pa-pb||Math.abs(ta)-Math.abs(tb)||a.node.id-b.node.id;
+   });
+   // If a detour takes too long, reverse the wall-following side once.
+   if(elapsed-detour.startedAt>5){
+    detour.side*=-1;detour.startedAt=elapsed;detour.startDistance=currentGoalDistance;
+   }
+  }else{
+   pool=forward.length?forward:candidates;
+   if(previous&&pool.length>1){
+    const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
+    if(notBack.length)pool=notBack;
+   }
+   pool=pool.slice().sort((a,b)=>{
+    const da=Math.hypot(goal.x-a.node.x,goal.z-a.node.z);
+    const db=Math.hypot(goal.x-b.node.x,goal.z-b.node.z);
+    if(Math.abs(da-db)>.025)return da-db;
+    const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
+    const align=c=>{const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z,l=Math.hypot(dx,dz)||1;return (dx*heading.x+dz*heading.z)/l};
+    return align(b)-align(a)||a.node.id-b.node.id;
+   });
+  }
   chosen=pool[0];
   t.localGridPortalLock={from:current.id,to:chosen.node.id};
  }
@@ -570,18 +606,11 @@ function stepTeacher(t,dt){
  }
  let target=ud.chaseTarget;
  if(target!==player.pos){const survivor=survivors.find(a=>a.root.position===target&&!a.dead);if(survivor)target=survivor.root.position;else{ud.chaseUntil=0;target=player.pos;ud.chaseTarget=target}}
- // Keep a small attack standoff instead of walking through the target/player camera.
- const nearest=Math.hypot(p.x-target.x,p.z-target.z),stopDistance=2.65;
- if(nearest>stopDistance){
-  const awayX=nearest>.001?(p.x-target.x)/nearest:0;
-  const awayZ=nearest>.001?(p.z-target.z)/nearest:1;
-  const approach=target.clone().setY(0);
-  approach.x+=awayX*stopDistance;approach.z+=awayZ*stopDistance;
-  steerTeacherWaypoints(t,approach,dt,t.speed);
- }else brakeTeacher(t,dt);
- const state=nearest<3.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';
+ const nearest=p.distanceTo(target);
+ steerTeacherWaypoints(t,target,dt,t.speed);
+ const state=nearest<2.2?'attack':nearest<(t.animState==='run'?20:16)?'run':'walk';
  if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
- if(nearest<3.2&&elapsed-t.attackAt>1){
+ if(nearest<2.8&&elapsed-t.attackAt>1){
   t.attackAt=elapsed;
   if(elapsed-t.lastDamageAt>=1.5){
    t.lastDamageAt=elapsed;

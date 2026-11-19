@@ -453,10 +453,14 @@ function steerTeacherWaypoints(t,target,dt,speed){
  const previousTargetPolygonKey=t.localGridTargetPolygonKey||null;
  t.localGridTargetPolygonKey=targetPolygonKey;
  if(targetPolygonKey&&previousTargetPolygonKey===targetPolygonKey){
-  t.localGridPortalLock=null;
-  t.localGridLastNode=null;
-  t.localGridDetour=null;
-  return moveTeacherToward(t,rawGoal,dt,speed);
+  // Stay in direct-pursuit mode only while the hallway segment is clear.
+  // If blocked, fall through to normal polygon/portal following immediately.
+  if(moveTeacherToward(t,rawGoal,dt,speed)){
+   t.localGridPortalLock=null;
+   t.localGridLastNode=null;
+   t.localGridDetour=null;
+   return true;
+  }
  }
  const candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
  if(!candidates.length){t.localGridPortalLock=null;t.localGridRetryAt=elapsed+.45;brakeTeacher(t,dt);return false}
@@ -557,11 +561,14 @@ function steerTeacherWaypoints(t,target,dt,speed){
 }
 function moveTeacherToward(t,point,dt,speed){
  const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);if(dist<.06)return true;
- const vx=dx/dist,vz=dz/dist,angle=Math.atan2(vx,vz);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+ const vx=dx/dist,vz=dz/dist,angle=Math.atan2(vx,vz);
  const step=Math.min(speed*dt,dist),nx=p.x+vx*step,nz=p.z+vz*step;
- if(teacherGroundScore(nx,nz)===1&&teacherSegmentClear(p.x,p.z,nx,nz)){p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);return true}
- for(const turn of [-1,1,-2,2]){const a=angle+turn*Math.PI/4,sx=Math.sin(a),sz=Math.cos(a),x=p.x+sx*step,z=p.z+sz*step;if(teacherGroundScore(x,z)===1&&teacherSegmentClear(p.x,p.z,x,z)){p.x=x;p.z=z;t.moveDir.set(sx,0,sz);return true}}
- return false
+ // Direct pursuit is allowed only down a genuinely clear hallway. Never
+ // sidestep/slide diagonally when blocked; let the polygon portals route around it.
+ if(teacherGroundScore(nx,nz)!==1||!teacherSegmentClear(p.x,p.z,nx,nz))return false;
+ p.x=nx;p.z=nz;t.moveDir.set(vx,0,vz);
+ t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+ return true
 }
 function buildCoordinateTrail(agent,target){
  // Sequential breadcrumbs with obstacle detours: permit sideways/backward steps when direct progress is blocked.

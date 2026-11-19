@@ -22,7 +22,12 @@ const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat
 const obstacles=[],steeringBounds=[],navBlockers=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
 function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);navBlockers.push(o);o.userData.avoidVector=true}return o}
 function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
-function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
+function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
+ // Invisible, subdivided navigation source laid directly on the real floor.
+ // Teacher polygons are extracted from these ground triangles, not generated grid cells.
+ const navGround=new THREE.Mesh(new THREE.PlaneGeometry(10,10,8,8),new THREE.MeshBasicMaterial({visible:false,side:THREE.DoubleSide}));
+ navGround.rotation.x=-Math.PI/2;navGround.position.set(x,.006,z);scene.add(navGround);floors.push(navGround);
+ box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
 if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
 if(x===-30)wallBox(x-4.9,1.5,z,.2,3,10);
@@ -364,14 +369,24 @@ function teacherPointInPolygon(x,z,poly){
  return inside;
 }
 function buildTeacherLocalGrid(t,target){
- const p=t.root.position,cell=TEACHER_GRID_CELL,radius=TEACHER_GRID_RADIUS,half=cell*.5;
- const cols=Math.ceil(radius*2/cell)+1,rows=cols;
- const minX=Math.floor((p.x-radius)/cell)*cell,minZ=Math.floor((p.z-radius)/cell)*cell;
- const nodes=[],edgeOwners=new Map();
+ const p=t.root.position,radius=18,nodes=[],edgeOwners=new Map();
  const vertexKey=v=>v.x.toFixed(4)+','+v.z.toFixed(4);
- const addTriangle=(cx,cz,verts,cellId)=>{
-  const x=(verts[0].x+verts[1].x+verts[2].x)/3,z=(verts[0].z+verts[1].z+verts[2].z)/3;
-  const id=nodes.length,node={id,x,z,walkable:true,polygon:verts,cellId,polygonKey:x.toFixed(3)+','+z.toFixed(3),edges:[],bridges:[]};
+ const groundOpen=(x,z)=>{
+  for(const b of obstacles)if(x+.55>b.min.x&&x-.55<b.max.x&&z+.55>b.min.z&&z-.55<b.max.z)return false;
+  return true;
+ };
+ const addTriangle=verts=>{
+  // Reject ground triangles that overlap furniture clearance. This carves the
+  // walkable ground mesh around object bounds before portals are stitched.
+  const samples=[...verts,
+   {x:(verts[0].x+verts[1].x)*.5,z:(verts[0].z+verts[1].z)*.5},
+   {x:(verts[1].x+verts[2].x)*.5,z:(verts[1].z+verts[2].z)*.5},
+   {x:(verts[2].x+verts[0].x)*.5,z:(verts[2].z+verts[0].z)*.5},
+   {x:(verts[0].x+verts[1].x+verts[2].x)/3,z:(verts[0].z+verts[1].z+verts[2].z)/3}
+  ];
+  if(samples.some(v=>!groundOpen(v.x,v.z)))return;
+  const x=samples[6].x,z=samples[6].z,id=nodes.length;
+  const node={id,x,z,walkable:true,polygon:verts,polygonKey:x.toFixed(3)+','+z.toFixed(3),edges:[],bridges:[]};
   nodes.push(node);
   for(let k=0;k<3;k++){
    const v1=verts[k],v2=verts[(k+1)%3],ka=vertexKey(v1),kb=vertexKey(v2),key=ka<kb?ka+'|'+kb:kb+'|'+ka;
@@ -379,35 +394,34 @@ function buildTeacherLocalGrid(t,target){
    const list=edgeOwners.get(key)||[];list.push({node,mid,a:v1,b:v2});edgeOwners.set(key,list);
   }
  };
- // Triangulate each walkable grid square into two real navmesh polygons.
- // Shared triangle edges are later stitched into portals.
- for(let z=0;z<rows;z++)for(let x=0;x<cols;x++){
-  const wx=minX+x*cell,wz=minZ+z*cell;
-  // A polygon cell is walkable only when its full footprint has clearance,
-  // not merely when its center happens to fall outside an object's outline box.
-  const samples=[
-   [wx,wz],[wx-half,wz-half],[wx+half,wz-half],
-   [wx+half,wz+half],[wx-half,wz+half],
-   [wx,wz-half],[wx+half,wz],[wx,wz+half],[wx-half,wz]
-  ];
-  if(samples.some(([sx,sz])=>teacherGroundScore(sx,sz)!==1))continue;
-  const bl={x:wx-half,z:wz-half},br={x:wx+half,z:wz-half},
-   tr={x:wx+half,z:wz+half},tl={x:wx-half,z:wz+half},cellId=z*cols+x;
-  addTriangle(wx,wz,[bl,br,tr],cellId);
-  addTriangle(wx,wz,[bl,tr,tl],cellId);
+ // Read the actual triangulated floor meshes. Only nearby ground triangles are
+ // considered, so each teacher retains its own local polygon navmesh.
+ for(const ground of floors){
+  ground.updateMatrixWorld(true);
+  const pos=ground.geometry.attributes.position,index=ground.geometry.index;
+  const count=index?index.count:pos.count;
+  for(let i=0;i<count;i+=3){
+   const ids=index?[index.getX(i),index.getX(i+1),index.getX(i+2)]:[i,i+1,i+2];
+   const verts=ids.map(id=>{
+    const v=new THREE.Vector3().fromBufferAttribute(pos,id);ground.localToWorld(v);
+    return {x:v.x,z:v.z};
+   });
+   const cx=(verts[0].x+verts[1].x+verts[2].x)/3,cz=(verts[0].z+verts[1].z+verts[2].z)/3;
+   if(Math.hypot(cx-p.x,cz-p.z)>radius)continue;
+   addTriangle(verts);
+  }
  }
- // Stitch polygons that share a complete edge. A ray-clear portal is a valid bridge.
+ // Shared ground-mesh edges become portals only when the physical corridor is clear.
  for(const list of edgeOwners.values()){
   if(list.length!==2)continue;
   const [a,b]=list;
   if(!teacherGridRayClear(a.node,b.node))continue;
-  const mid=a.mid;
   a.node.edges.push(b.node.id);b.node.edges.push(a.node.id);
-  a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:mid});
-  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:mid});
+  a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:a.mid});
+  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:a.mid});
  }
  return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed,
-  type:'local-triangle-navmesh',polygonCount:nodes.length,portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
+  type:'ground-triangle-navmesh',polygonCount:nodes.length,portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
 }
 function brakeTeacher(t,dt){
  const damping=Math.exp(-10*Math.max(0,dt));

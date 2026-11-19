@@ -408,7 +408,7 @@ function buildTeacherGlobalNavmesh(){
   const [a,b]=list;if(!teacherGridRayClear(a.node,b.node))continue;
   a.node.edges.push(b.node.id);b.node.edges.push(a.node.id);
   a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:a.mid});
-  b.node.bridges.push({to:a.node.id,a:a.a,b:a.a,midpoint:a.mid});
+  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:a.mid});
  }
  return {nodes,builtAt:elapsed,floorCount:floors.length,obstacleCount:obstacles.length,
   type:'global-ground-triangle-navmesh',polygonCount:nodes.length,

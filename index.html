@@ -469,6 +469,9 @@ function steerTeacherWaypoints(t,target,dt,speed){
   t.polygonBlockedPortals.add(current.polygonKey+'>'+t.polygonVisitGoal);
   t.polygonVisitGoal=null;t.polygonProgressAt=elapsed;t.polygonProgressPos.copy(p);brakeTeacher(t,dt);
  }
+ // Every polygon entered is marked blocked for future exploration goals.
+ // The DFS parent stack remains the only exception: it can cross blocked
+ // polygons solely to return to an unexplored frontier.
  t.visitedPolygons.add(current.polygonKey);
  if(t.polygonVisitGoal===current.polygonKey)t.polygonVisitGoal=null;
  if(!t.polygonVisitGoal){
@@ -489,14 +492,42 @@ function steerTeacherWaypoints(t,target,dt,speed){
    if(!t.polygonBlockedPortals.has(current.polygonKey+'>'+parent))t.polygonVisitGoal=parent;
    else t.polygonVisitGoal=null;
   }else{
-   // Every polygon in this connected component has been searched.
-   // Begin another complete sweep; do not abandon the component early.
-   t.visitedPolygons.clear();t.polygonBlockedPortals.clear();
-   t.visitedPolygons.add(current.polygonKey);
-   const next=adjacent.slice().sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
-   if(next){
-    t.polygonVisitPath.push(current.polygonKey);
-    t.polygonVisitGoal=next.node.polygonKey;
+   // Visited polygons are temporarily BLOCKED as exploration destinations.
+   // They may still be crossed when retracing the DFS stack to reach a new
+   // frontier, but teachers never choose them as fresh search goals.
+   // Refresh the entire blocked map only after every polygon in the global
+   // navmesh has been visited (not merely when one branch/component ends).
+   const allPolygonsBlocked=nodes.every(node=>t.visitedPolygons.has(node.polygonKey));
+   if(allPolygonsBlocked){
+    t.visitedPolygons.clear();
+    t.polygonBlockedPortals.clear();
+    t.polygonVisitPath.length=0;
+    t.visitedPolygons.add(current.polygonKey);
+    const next=adjacent.filter(v=>!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
+     .sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
+    if(next){
+     t.polygonVisitPath.push(current.polygonKey);
+     t.polygonVisitGoal=next.node.polygonKey;
+    }
+   }else{
+    // A disconnected/unreached area remains: keep the current visited
+    // polygons blocked and retry an unvisited adjacent frontier next frame.
+    const frontier=adjacent.filter(v=>!t.visitedPolygons.has(v.node.polygonKey)&&
+      !t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
+     .sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
+    if(frontier){
+     t.polygonVisitPath.push(current.polygonKey);
+     t.polygonVisitGoal=frontier.node.polygonKey;
+    }else{
+     // Do not refresh early. Backtrack through the saved route to the
+     // nearest previously visited polygon that still borders unexplored space.
+     let parent=null;
+     while(t.polygonVisitPath.length&&!parent){
+      const key=t.polygonVisitPath.pop();
+      if(key!==current.polygonKey)parent=key;
+     }
+     if(parent)t.polygonVisitGoal=parent;
+    }
    }
   }
  }

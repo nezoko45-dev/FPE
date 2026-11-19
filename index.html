@@ -288,10 +288,9 @@ function buildTeacherLocalGrid(t,target){
  const nodes=new Array(cols*rows),dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
  for(let z=0;z<rows;z++)for(let x=0;x<cols;x++){
   const wx=minX+x*cell,wz=minZ+z*cell,id=z*cols+x;
-  const walkable=teacherGroundScore(wx,wz)===1;
-  nodes[id]={id,x:wx,z:wz,walkable,edges:[]};
+  nodes[id]={id,x:wx,z:wz,walkable:teacherGroundScore(wx,wz)===1,edges:[]};
  }
- // Shoot a bridge ray from each walkable node toward each neighboring node.
+ // Every walkable node raycasts toward its immediate neighbors; clear rays form bridges.
  for(const node of nodes){
   if(!node.walkable)continue;
   const gx=Math.round((node.x-minX)/cell),gz=Math.round((node.z-minZ)/cell);
@@ -300,67 +299,50 @@ function buildTeacherLocalGrid(t,target){
    if(nx<0||nz<0||nx>=cols||nz>=rows)continue;
    const other=nodes[nz*cols+nx];
    if(!other?.walkable)continue;
-   // Diagonal bridges may not cut through a blocked corner.
-   if(dx&&dz){
-    const sideA=nodes[gz*cols+nx],sideB=nodes[nz*cols+gx];
-    if(!sideA?.walkable||!sideB?.walkable)continue;
-   }
+   if(dx&&dz&&(!nodes[gz*cols+nx]?.walkable||!nodes[nz*cols+gx]?.walkable))continue;
    if(teacherGridRayClear(node,other))node.edges.push(other.id);
   }
  }
- const tx=Math.max(0,Math.min(cols-1,Math.round((target.x-minX)/cell)));
- const tz=Math.max(0,Math.min(rows-1,Math.round((target.z-minZ)/cell)));
- let goal=nodes[tz*cols+tx];
- if(!goal?.walkable){
-  let nearest=null,best=Infinity;
-  for(const n of nodes)if(n.walkable){const d=(n.x-target.x)**2+(n.z-target.z)**2;if(d<best){best=d;nearest=n}}
-  goal=nearest;
- }
- let startNode=null,startDist=Infinity;
- for(const n of nodes)if(n.walkable){const d=(n.x-p.x)**2+(n.z-p.z)**2;if(d<startDist){startDist=d;startNode=n}}
- if(!startNode||!goal)return null;
- // Breadth-first traversal over the ray-validated bridges.
- const previous=new Int32Array(nodes.length);previous.fill(-1);
- const seen=new Uint8Array(nodes.length),queue=new Int32Array(nodes.length);
- let head=0,tail=0;queue[tail++]=startNode.id;seen[startNode.id]=1;
- while(head<tail&&!seen[goal.id]){
-  const id=queue[head++],node=nodes[id];
-  for(const next of node.edges)if(!seen[next]){seen[next]=1;previous[next]=id;queue[tail++]=next}
- }
- if(!seen[goal.id])return null;
- const path=[];let at=goal.id;
- while(at!==-1){path.push(nodes[at]);if(at===startNode.id)break;at=previous[at]}
- path.reverse();
- return {path,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed};
+ return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed};
 }
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),grid=t.localGrid;
  const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
   Math.hypot(goal.x-grid.targetX,goal.z-grid.targetZ)>2.2||
   elapsed-grid.builtAt>1.1||t.localGridBlocked;
- if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridIndex=0;t.localGridBlocked=false}
- const path=t.localGrid?.path;
- if(!path?.length){t.localGridBlocked=true;return false}
- // Follow the ordered node bridges. Rebuild the local grid as the teacher moves.
- let index=t.localGridIndex||0;
- // First connect the teacher's current position to its nearest local-grid node.
- if(index===0&&Math.hypot(path[0].x-p.x,path[0].z-p.z)>.35){
-  t.localGridIndex=0;
- }else{
-  while(index<path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)index++;
-  t.localGridIndex=index;
+ if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridBlocked=false;t.localGridLastNode=null}
+ const nodes=t.localGrid?.nodes;
+ if(!nodes?.length)return false;
+ // Follow one actual bridge at a time: find the nearest node and choose one
+ // of its ray-validated neighbors, favoring the neighbor closest to the target.
+ let current=null,currentDist=Infinity;
+ for(const n of nodes)if(n.walkable){
+  const d=(n.x-p.x)**2+(n.z-p.z)**2;
+  if(d<currentDist){currentDist=d;current=n}
  }
- let waypoint=index===0&&Math.hypot(path[0].x-p.x,path[0].z-p.z)>.35
-  ?path[0]:path[Math.min(index+1,path.length-1)];
- if(index>=path.length-1&&Math.hypot(path[index].x-p.x,path[index].z-p.z)<.55)waypoint=path[index];
- const dx=waypoint.x-p.x,dz=waypoint.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.08){t.localGridBlocked=true;return false}
+ if(!current)return false;
+ let candidates=current.edges.map(id=>nodes[id]).filter(n=>n?.walkable);
+ if(!candidates.length){t.localGridBlocked=true;return false}
+ const previous=t.localGridLastNode;
+ let forward=candidates.filter(n=>Math.hypot(goal.x-n.x,goal.z-n.z)<
+  Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
+ if(previous&&candidates.length>1){
+  const notBack=candidates.filter(n=>Math.hypot(n.x-previous.x,n.z-previous.z)>.2);
+  if(notBack.length)forward=forward.filter(n=>notBack.includes(n));
+ }
+ let pool=forward.length?forward:candidates;
+ if(previous&&pool.length>1){
+  const notBack=pool.filter(n=>Math.hypot(n.x-previous.x,n.z-previous.z)>.2);
+  if(notBack.length)pool=notBack;
+ }
+ pool.sort((a,b)=>Math.hypot(goal.x-a.x,goal.z-a.z)-Math.hypot(goal.x-b.x,goal.z-b.z));
+ const next=pool[0],dx=next.x-p.x,dz=next.z-p.z,dist=Math.hypot(dx,dz);
+ if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};return true}
  const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
- // Final movement is guarded by the same bridge ray test; never cross an unverified edge.
- if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
-  t.localGridBlocked=true;t.localGridIndex=0;return false;
- }
- p.x=nx;p.z=nz;t.moveDir.set(dx/dist,0,dz/dist);
+ if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){t.localGridBlocked=true;return false}
+ p.x=nx;p.z=nz;
+ if(dist<.3)t.localGridLastNode={x:current.x,z:current.z};
+ t.moveDir.set(dx/dist,0,dz/dist);
  const angle=Math.atan2(dx,dz);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
  return true;

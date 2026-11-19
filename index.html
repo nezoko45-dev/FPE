@@ -414,10 +414,23 @@ function buildTeacherGlobalNavmesh(){
  }
  for(const list of edgeOwners.values()){
   if(list.length!==2)continue;
-  const [a,b]=list;if(!teacherGridRayClear(a.node,b.node))continue;
+  const [a,b]=list;
+  // A centroid-to-centroid ray can falsely discard a usable portal when a
+  // desk clips only one side of that long diagonal. Probe several points
+  // across the shared edge and keep a genuinely clear crossing point.
+  const candidates=[.2,.35,.5,.65,.8].map(t=>({
+   x:a.a.x+(a.b.x-a.a.x)*t,z:a.a.z+(a.b.z-a.a.z)*t
+  }));
+  let portal=null;
+  for(const point of candidates){
+   if(teacherGridRayClear(a.node,point)&&teacherGridRayClear(point,b.node)){
+    portal=point;break;
+   }
+  }
+  if(!portal)continue;
   a.node.edges.push(b.node.id);b.node.edges.push(a.node.id);
-  a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:a.mid});
-  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:a.mid});
+  a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:portal});
+  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:portal});
  }
  return {nodes,builtAt:elapsed,floorCount:floors.length,obstacleCount:obstacles.length,
   type:'global-ground-triangle-navmesh',polygonCount:nodes.length,
@@ -447,10 +460,12 @@ function steerTeacherWaypoints(t,target,dt,speed){
   // Only discard exploration state after direct pursuit actually moves.
   // Clear upper-body LOS does not guarantee a clear floor-level route.
   t.teacherLostTargetLOS=false;
-  t.polygonVisitGoal=null;
-  t.polygonVisitPath??=[];t.polygonVisitPath.length=0;
-  t.visitedPolygons?.clear();
-  t.polygonEscapeMode=false;t.polygonRecent=[];t.polygonLastCurrent=null;
+  // Pursuit is temporary movement, not a reset of the world-exploration map.
+  // Keep the DFS frontier and visited polygons so losing sight resumes the
+  // same global sweep instead of restarting near the target every time.
+  t.polygonVisitPath??=[];
+  t.visitedPolygons??=new Set();
+  t.polygonBlockedPortals??=new Set();
   return true;
  }
  // If direct movement is blocked, preserve the DFS route and keep following

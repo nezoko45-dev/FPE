@@ -443,16 +443,18 @@ function steerTeacherWaypoints(t,target,dt,speed){
  if(!current){brakeTeacher(t,dt);return false}
  // Clear sight restores direct target pursuit. When walls/objects break LOS,
  // stay in the global polygon exploration routine below until sight is regained.
- if(teacherHasLineOfSight(t,target)){
+ if(teacherHasLineOfSight(t,target)&&moveTeacherToward(t,target,dt,speed)){
+  // Only discard exploration state after direct pursuit actually moves.
+  // Clear upper-body LOS does not guarantee a clear floor-level route.
   t.teacherLostTargetLOS=false;
   t.polygonVisitGoal=null;
-  t.polygonVisitPath.length=0;
-  if(moveTeacherToward(t,target,dt,speed)){
-   t.visitedPolygons?.clear();
-   t.polygonEscapeMode=false;t.polygonRecent=[];t.polygonLastCurrent=null;
-   return true;
-  }
+  t.polygonVisitPath??=[];t.polygonVisitPath.length=0;
+  t.visitedPolygons?.clear();
+  t.polygonEscapeMode=false;t.polygonRecent=[];t.polygonLastCurrent=null;
+  return true;
  }
+ // If direct movement is blocked, preserve the DFS route and keep following
+ // portals around the obstruction instead of resetting to the same corner.
  t.teacherLostTargetLOS=true;
  // Exhaustively traverse every portal-connected polygon with depth-first
  // exploration. Never switch to a short target-biased route after a few rooms.

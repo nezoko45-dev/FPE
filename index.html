@@ -90,7 +90,7 @@ function drawTeacherNavmesh(){
  clearTeacherNavmeshViz();if(!showTeacherNavmesh)return;
  const colors=[0x49e6ff,0xff6b9d,0xffdf59];
  teachers.forEach((t,index)=>{
-  const grid=t.localGrid,nodes=grid?.nodes;if(!nodes?.length)return;
+  const grid=globalTeacherNavmesh,nodes=grid?.nodes;if(!nodes?.length)return;
   const polygonLines=[],portalLines=[],centers=[];
   const color=colors[index%colors.length];
   for(const node of nodes){
@@ -368,16 +368,14 @@ function teacherPointInPolygon(x,z,poly){
  }
  return inside;
 }
-function buildTeacherLocalGrid(t,target){
- const p=t.root.position,radius=18,nodes=[],edgeOwners=new Map();
- const vertexKey=v=>v.x.toFixed(4)+','+v.z.toFixed(4);
+let globalTeacherNavmesh=null;
+function buildTeacherGlobalNavmesh(){
+ const nodes=[],edgeOwners=new Map(),vertexKey=v=>v.x.toFixed(4)+','+v.z.toFixed(4);
  const groundOpen=(x,z)=>{
-  for(const b of obstacles)if(x+.55>b.min.x&&x-.55<b.max.x&&z+.55>b.min.z&&z-.55<b.max.z)return false;
+  for(const box of obstacles)if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z)return false;
   return true;
  };
  const addTriangle=verts=>{
-  // Reject ground triangles that overlap furniture clearance. This carves the
-  // walkable ground mesh around object bounds before portals are stitched.
   const samples=[...verts,
    {x:(verts[0].x+verts[1].x)*.5,z:(verts[0].z+verts[1].z)*.5},
    {x:(verts[1].x+verts[2].x)*.5,z:(verts[1].z+verts[2].z)*.5},
@@ -385,8 +383,9 @@ function buildTeacherLocalGrid(t,target){
    {x:(verts[0].x+verts[1].x+verts[2].x)/3,z:(verts[0].z+verts[1].z+verts[2].z)/3}
   ];
   if(samples.some(v=>!groundOpen(v.x,v.z)))return;
-  const x=samples[6].x,z=samples[6].z,id=nodes.length;
-  const node={id,x,z,walkable:true,polygon:verts,polygonKey:x.toFixed(3)+','+z.toFixed(3),edges:[],bridges:[]};
+  const center=samples[6],id=nodes.length;
+  const node={id,x:center.x,z:center.z,walkable:true,polygon:verts,
+   polygonKey:center.x.toFixed(3)+','+center.z.toFixed(3),edges:[],bridges:[]};
   nodes.push(node);
   for(let k=0;k<3;k++){
    const v1=verts[k],v2=verts[(k+1)%3],ka=vertexKey(v1),kb=vertexKey(v2),key=ka<kb?ka+'|'+kb:kb+'|'+ka;
@@ -394,34 +393,26 @@ function buildTeacherLocalGrid(t,target){
    const list=edgeOwners.get(key)||[];list.push({node,mid,a:v1,b:v2});edgeOwners.set(key,list);
   }
  };
- // Read the actual triangulated floor meshes. Only nearby ground triangles are
- // considered, so each teacher retains its own local polygon navmesh.
+ // One shared navmesh covers every generated floor tile, regardless of teacher position.
  for(const ground of floors){
   ground.updateMatrixWorld(true);
-  const pos=ground.geometry.attributes.position,index=ground.geometry.index;
-  const count=index?index.count:pos.count;
+  const pos=ground.geometry.attributes.position,index=ground.geometry.index,count=index?index.count:pos.count;
   for(let i=0;i<count;i+=3){
    const ids=index?[index.getX(i),index.getX(i+1),index.getX(i+2)]:[i,i+1,i+2];
-   const verts=ids.map(id=>{
-    const v=new THREE.Vector3().fromBufferAttribute(pos,id);ground.localToWorld(v);
-    return {x:v.x,z:v.z};
-   });
-   const cx=(verts[0].x+verts[1].x+verts[2].x)/3,cz=(verts[0].z+verts[1].z+verts[2].z)/3;
-   if(Math.hypot(cx-p.x,cz-p.z)>radius)continue;
+   const verts=ids.map(id=>{const v=new THREE.Vector3().fromBufferAttribute(pos,id);ground.localToWorld(v);return {x:v.x,z:v.z}});
    addTriangle(verts);
   }
  }
- // Shared ground-mesh edges become portals only when the physical corridor is clear.
  for(const list of edgeOwners.values()){
   if(list.length!==2)continue;
-  const [a,b]=list;
-  if(!teacherGridRayClear(a.node,b.node))continue;
+  const [a,b]=list;if(!teacherGridRayClear(a.node,b.node))continue;
   a.node.edges.push(b.node.id);b.node.edges.push(a.node.id);
   a.node.bridges.push({to:b.node.id,a:a.a,b:a.b,midpoint:a.mid});
-  b.node.bridges.push({to:a.node.id,a:a.a,b:a.b,midpoint:a.mid});
+  b.node.bridges.push({to:a.node.id,a:a.a,b:a.a,midpoint:a.mid});
  }
- return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed,
-  type:'ground-triangle-navmesh',polygonCount:nodes.length,portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
+ return {nodes,builtAt:elapsed,floorCount:floors.length,obstacleCount:obstacles.length,
+  type:'global-ground-triangle-navmesh',polygonCount:nodes.length,
+  portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
 }
 function brakeTeacher(t,dt){
  const damping=Math.exp(-10*Math.max(0,dt));
@@ -429,132 +420,55 @@ function brakeTeacher(t,dt){
  if(t.velocity&&t.velocity.lengthSq()<.0025)t.velocity.set(0,0,0);
 }
 function steerTeacherWaypoints(t,target,dt,speed){
- const p=t.root.position,rawGoal=target.clone().setY(0),grid=t.localGrid;
- const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
-  Math.hypot(rawGoal.x-grid.targetX,rawGoal.z-grid.targetZ)>2.2||
-  elapsed-grid.builtAt>1.1||
-  (t.localGridRetryAt!==undefined&&elapsed>=t.localGridRetryAt);
- if(needsGrid){
-  t.localGrid=buildTeacherLocalGrid(t,rawGoal);
-  t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null;t.localGridPortalLock=null;t.localGridDetour=null;
+ const p=t.root.position;
+ if(!globalTeacherNavmesh||globalTeacherNavmesh.floorCount!==floors.length||
+    globalTeacherNavmesh.obstacleCount!==obstacles.length){
+  globalTeacherNavmesh=buildTeacherGlobalNavmesh();
  }
- const nodes=t.localGrid?.nodes;
- if(!nodes?.length){brakeTeacher(t,dt);return false;}
- // If a survivor is standing inside/against furniture, pursue the nearest
- // walkable polygon center instead of steering toward an unreachable body center.
- let goalNode=null,goalNodeDist=Infinity;
- for(const n of nodes){
-  const d=(n.x-rawGoal.x)**2+(n.z-rawGoal.z)**2;
-  if(d<goalNodeDist){goalNodeDist=d;goalNode=n}
- }
- const goal=goalNode&&goalNodeDist<30.25?
-  new THREE.Vector3(goalNode.x,0,goalNode.z):rawGoal;
- // Locate the polygon containing the teacher; nearest-centroid fallback handles
- // tiny numerical gaps at polygon edges.
+ const nodes=globalTeacherNavmesh.nodes;
+ if(!nodes.length){brakeTeacher(t,dt);return false}
+ // Find the polygon under the teacher; nearest centroid is a safe edge fallback.
  let current=null,currentDist=Infinity;
  for(const n of nodes)if(teacherPointInPolygon(p.x,p.z,n.polygon)){current=n;break}
- if(!current)for(const n of nodes){
-  const d=(n.x-p.x)**2+(n.z-p.z)**2;
-  if(d<currentDist){currentDist=d;current=n}
- }
+ if(!current)for(const n of nodes){const d=(n.x-p.x)**2+(n.z-p.z)**2;if(d<currentDist){currentDist=d;current=n}}
  if(!current){brakeTeacher(t,dt);return false}
- // Track the target's actual triangle, not its nearest centroid. While the
- // target remains in that same polygon, skip portal selection and pursue
- // directly with the existing ground/obstacle collision checks.
- let targetPolygon=null;
- for(const n of nodes)if(teacherPointInPolygon(rawGoal.x,rawGoal.z,n.polygon)){targetPolygon=n;break}
- const targetPolygonKey=targetPolygon?.polygonKey||null;
- const previousTargetPolygonKey=t.localGridTargetPolygonKey||null;
- t.localGridTargetPolygonKey=targetPolygonKey;
- if(targetPolygonKey&&previousTargetPolygonKey===targetPolygonKey){
-  // Stay in direct-pursuit mode only while the hallway segment is clear.
-  // If blocked, fall through to normal polygon/portal following immediately.
-  if(moveTeacherToward(t,rawGoal,dt,speed)){
-   t.localGridPortalLock=null;
-   t.localGridLastNode=null;
-   t.localGridDetour=null;
-   return true;
-  }
- }
- const candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
- if(!candidates.length){t.localGridPortalLock=null;t.localGridRetryAt=elapsed+.45;brakeTeacher(t,dt);return false}
- // Hold the selected portal until it is crossed. This hysteresis prevents
- // neighboring polygons from repeatedly swapping the desired bridge mid-step.
- let chosen=null,lock=t.localGridPortalLock;
- if(lock&&lock.from===current.id){
-  const held=candidates.find(c=>c.node.id===lock.to);
-  if(held){
-   const portal=held.link.midpoint;
-   if(Math.hypot(p.x-portal.x,p.z-portal.z)>.32)chosen=held;
-  }
- }
- if(!chosen){
-  const previous=t.localGridLastNode;
-  const currentGoalDistance=Math.hypot(goal.x-current.x,goal.z-current.z);
-  let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
-   currentGoalDistance-.015);
-  if(previous&&candidates.length>1){
-   const notBack=candidates.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-   if(notBack.length)forward=forward.filter(c=>notBack.includes(c));
-  }
-  // If greedy progress ends at an obstacle, switch to persistent one-sided
-  // portal following. This walks around the boundary instead of bouncing
-  // between the same two triangles. It uses only immediate bridge neighbors.
-  let detour=t.localGridDetour;
-  if(detour&&currentGoalDistance<detour.startDistance-.7){
-   detour=null;t.localGridDetour=null;
-  }
-  if(!forward.length&&!detour){
-   const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
-   const cross=heading.x*(goal.z-current.z)-heading.z*(goal.x-current.x);
-   detour={side:cross>=0?1:-1,startDistance:currentGoalDistance,startedAt:elapsed};
-   t.localGridDetour=detour;
-  }
-  let pool;
-  if(detour){
-   // Keep following the same side until the route makes real goal progress.
-   const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
-   const headingAngle=Math.atan2(heading.x,heading.z);
-   const turnFor=c=>{
-    const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z;
-    const a=Math.atan2(dx,dz);
-    return Math.atan2(Math.sin(a-headingAngle),Math.cos(a-headingAngle));
-   };
-   const notBack=candidates.filter(c=>!previous||Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-   pool=(notBack.length?notBack:candidates).slice().sort((a,b)=>{
-    const ta=turnFor(a),tb=turnFor(b),sa=Math.sign(ta||detour.side),sb=Math.sign(tb||detour.side);
-    const pa=sa===detour.side?0:1,pb=sb===detour.side?0:1;
-    return pa-pb||Math.abs(ta)-Math.abs(tb)||a.node.id-b.node.id;
-   });
-   // If a detour takes too long, reverse the wall-following side once.
-   if(elapsed-detour.startedAt>5){
-    detour.side*=-1;detour.startedAt=elapsed;detour.startDistance=currentGoalDistance;
-   }
+ // Each teacher performs a depth-first walk over portal-connected polygons.
+ // The parent stack lets it backtrack at dead ends without BFS/A*/Dijkstra.
+ t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;
+ t.visitedPolygons.add(current.polygonKey);
+ if(t.polygonVisitGoal===current.polygonKey)t.polygonVisitGoal=null;
+ if(!t.polygonVisitGoal){
+  const unvisited=(current.bridges||[])
+   .map(link=>({node:nodes[link.to],link}))
+   .filter(v=>v.node&&!t.visitedPolygons.has(v.node.polygonKey))
+   .sort((a,b)=>a.node.id-b.node.id);
+  if(unvisited.length){
+   const next=unvisited[0].node;
+   t.polygonVisitPath.push(current.polygonKey);
+   t.polygonVisitGoal=next.polygonKey;
+  }else if(t.polygonVisitPath.length){
+   t.polygonVisitGoal=t.polygonVisitPath.pop();
   }else{
-   pool=forward.length?forward:candidates;
-   if(previous&&pool.length>1){
-    const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-    if(notBack.length)pool=notBack;
-   }
-   pool=pool.slice().sort((a,b)=>{
-    const da=Math.hypot(goal.x-a.node.x,goal.z-a.node.z);
-    const db=Math.hypot(goal.x-b.node.x,goal.z-b.node.z);
-    if(Math.abs(da-db)>.025)return da-db;
-    const heading=t.velocity?.lengthSq()>.01?t.velocity:t.moveDir;
-    const align=c=>{const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z,l=Math.hypot(dx,dz)||1;return (dx*heading.x+dz*heading.z)/l};
-    return align(b)-align(a)||a.node.id-b.node.id;
-   });
+   // A complete connected-component sweep is finished: begin another sweep.
+   t.visitedPolygons.clear();t.visitedPolygons.add(current.polygonKey);
+   const next=(current.bridges||[]).map(link=>({node:nodes[link.to],link}))
+    .filter(v=>v.node).sort((a,b)=>a.node.id-b.node.id)[0];
+   if(next){t.polygonVisitPath.push(current.polygonKey);t.polygonVisitGoal=next.node.polygonKey}
   }
-  chosen=pool[0];
-  t.localGridPortalLock={from:current.id,to:chosen.node.id};
  }
- const next=chosen.node,portal=chosen.link.midpoint;
- const crossLen=Math.hypot(next.x-portal.x,next.z-portal.z)||1;
- const aim={x:portal.x+(next.x-portal.x)/crossLen*.38,z:portal.z+(next.z-portal.z)/crossLen*.38};
+ if(!t.polygonVisitGoal){brakeTeacher(t,dt);return false}
+ const candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link}))
+  .filter(v=>v.node?.polygonKey===t.polygonVisitGoal);
+ if(!candidates.length){
+  // A rebuilt/expanded global mesh can invalidate a pending portal; choose a fresh adjacent polygon.
+  t.polygonVisitGoal=null;t.polygonVisitPath.length=0;brakeTeacher(t,dt);return false;
+ }
+ const chosen=candidates[0],portal=chosen.link.midpoint;
+ const crossLen=Math.hypot(chosen.node.x-portal.x,chosen.node.z-portal.z)||1;
+ const aim={x:portal.x+(chosen.node.x-portal.x)/crossLen*.38,
+  z:portal.z+(chosen.node.z-portal.z)/crossLen*.38};
  const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.06){
-  t.localGridLastNode={x:current.x,z:current.z};t.localGridPortalLock=null;brakeTeacher(t,dt);return true;
- }
+ if(dist<.06){brakeTeacher(t,dt);return true}
  const acceleration=9.5,stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));
  const desiredSpeed=Math.min(speed,stoppingSpeed),desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
  const blend=1-Math.exp(-acceleration*Math.max(0,dt));
@@ -562,17 +476,15 @@ function steerTeacherWaypoints(t,target,dt,speed){
  t.velocity.z=THREE.MathUtils.lerp(t.velocity.z,desiredZ,blend);
  const nx=p.x+t.velocity.x*dt,nz=p.z+t.velocity.z*dt;
  if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
-  brakeTeacher(t,dt);t.localGridRetryAt=elapsed+.45;t.localGridPortalLock=null;return false;
+  brakeTeacher(t,dt);return false;
  }
  p.x=nx;p.z=nz;
- if(Math.hypot(p.x-portal.x,p.z-portal.z)<.32){
-  t.localGridLastNode={x:current.x,z:current.z};t.localGridPortalLock=null;
- }
  if(t.velocity.lengthSq()>.0025)t.moveDir.copy(t.velocity).setY(0).normalize();
  const angle=Math.atan2(dx,dz);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
  return true;
 }
+
 function moveTeacherToward(t,point,dt,speed){
  const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);if(dist<.06)return true;
  const vx=dx/dist,vz=dz/dist,angle=Math.atan2(vx,vz);
@@ -695,7 +607,7 @@ for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flow
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.localGrid=null;t.localGridIndex=0;t.localGridBlocked=false;t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.visitedPolygons=new Set();t.polygonVisitPath=[];t.polygonVisitGoal=null;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

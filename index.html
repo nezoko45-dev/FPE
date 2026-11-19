@@ -482,7 +482,8 @@ function steerTeacherWaypoints(t,target,dt,speed){
   t.polygonProgressPos.copy(p);t.polygonProgressAt=elapsed;
  }else if(t.polygonVisitGoal&&elapsed-t.polygonProgressAt>1.25){
   t.polygonBlockedPortals.add(current.polygonKey+'>'+t.polygonVisitGoal);
-  t.polygonVisitGoal=null;t.polygonProgressAt=elapsed;t.polygonProgressPos.copy(p);brakeTeacher(t,dt);
+  t.polygonVisitGoal=null;t.polygonProgressGoal=null;
+  t.polygonProgressAt=elapsed;t.polygonProgressPos.copy(p);brakeTeacher(t,dt);
  }
  // Every polygon entered is marked blocked for future exploration goals.
  // The DFS parent stack remains the only exception: it can cross blocked
@@ -547,6 +548,14 @@ function steerTeacherWaypoints(t,target,dt,speed){
   }
  }
  if(!t.polygonVisitGoal){brakeTeacher(t,dt);return false}
+ // A newly selected portal gets its own progress window. Without this reset,
+ // time spent pursuing a visible target can make the first hidden-target frame
+ // instantly blacklist the new portal and leave the teacher with no route.
+ if(t.polygonProgressGoal!==t.polygonVisitGoal){
+  t.polygonProgressGoal=t.polygonVisitGoal;
+  t.polygonProgressAt=elapsed;
+  t.polygonProgressPos.copy(p);
+ }
  const candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link}))
   .filter(v=>v.node?.polygonKey===t.polygonVisitGoal);
  if(!candidates.length){
@@ -555,8 +564,11 @@ function steerTeacherWaypoints(t,target,dt,speed){
  }
  const chosen=candidates[0],portal=chosen.link.midpoint;
  const crossLen=Math.hypot(chosen.node.x-portal.x,chosen.node.z-portal.z)||1;
- const aim={x:portal.x+(chosen.node.x-portal.x)/crossLen*.38,
-  z:portal.z+(chosen.node.z-portal.z)/crossLen*.38};
+ // Move decisively through the portal into the destination polygon. A tiny
+ // offset can leave the teacher hovering on the shared edge, so it never
+ // registers entry and keeps braking at the same point.
+ const aim={x:portal.x+(chosen.node.x-portal.x)/crossLen*.85,
+  z:portal.z+(chosen.node.z-portal.z)/crossLen*.85};
  const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.06){brakeTeacher(t,dt);return true}
  const acceleration=9.5,stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));

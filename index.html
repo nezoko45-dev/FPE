@@ -360,6 +360,15 @@ function teacherGridRayClear(a,b){
  teacherGridRaycaster.far=Math.max(0,distance-.035);
  return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
 }
+function teacherHasLineOfSight(t,target){
+ const from=new THREE.Vector3(t.root.position.x,t.root.position.y+1.15,t.root.position.z);
+ const to=new THREE.Vector3(target.x,target.y+.9,target.z);
+ const delta=to.clone().sub(from),distance=delta.length();
+ if(distance<.05)return true;
+ teacherGridRaycaster.set(from,delta.normalize());
+ teacherGridRaycaster.far=Math.max(0,distance-.12);
+ return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
+}
 function teacherPointInPolygon(x,z,poly){
  let inside=false;
  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
@@ -432,6 +441,18 @@ function steerTeacherWaypoints(t,target,dt,speed){
  for(const n of nodes)if(teacherPointInPolygon(p.x,p.z,n.polygon)){current=n;break}
  if(!current)for(const n of nodes){const d=(n.x-p.x)**2+(n.z-p.z)**2;if(d<currentDist){currentDist=d;current=n}}
  if(!current){brakeTeacher(t,dt);return false}
+ // Clear sight restores direct target pursuit. When walls/objects break LOS,
+ // stay in the global polygon exploration routine below until sight is regained.
+ if(teacherHasLineOfSight(t,target)){
+  t.teacherLostTargetLOS=false;
+  t.polygonVisitGoal=null;
+  t.polygonVisitPath.length=0;
+  if(moveTeacherToward(t,target,dt,speed)){
+   t.visitedPolygons?.clear();
+   return true;
+  }
+ }
+ t.teacherLostTargetLOS=true;
  // Each teacher performs a depth-first walk over portal-connected polygons.
  // The parent stack lets it backtrack at dead ends without BFS/A*/Dijkstra.
  t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;

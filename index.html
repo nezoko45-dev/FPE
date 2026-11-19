@@ -385,14 +385,20 @@ function buildTeacherLocalGrid(t,target){
  return {nodes,centerX:p.x,centerZ:p.z,targetX:target.x,targetZ:target.z,builtAt:elapsed,
   type:'local-triangle-navmesh',polygonCount:nodes.length,portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
 }
+function brakeTeacher(t,dt){
+ const damping=Math.exp(-10*Math.max(0,dt));
+ t.velocity?.multiplyScalar(damping);
+ if(t.velocity&&t.velocity.lengthSq()<.0025)t.velocity.set(0,0,0);
+}
 function steerTeacherWaypoints(t,target,dt,speed){
  const p=t.root.position,goal=target.clone().setY(0),grid=t.localGrid;
  const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
   Math.hypot(goal.x-grid.targetX,goal.z-grid.targetZ)>2.2||
-  elapsed-grid.builtAt>1.1||t.localGridBlocked;
- if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridBlocked=false;t.localGridLastNode=null}
+  elapsed-grid.builtAt>1.1||
+  (t.localGridRetryAt!==undefined&&elapsed>=t.localGridRetryAt);
+ if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null}
  const nodes=t.localGrid?.nodes;
- if(!nodes?.length)return false;
+ if(!nodes?.length){brakeTeacher(t,dt);return false;}
  // Follow one actual bridge at a time: find the nearest node and choose one
  // of its ray-validated neighbors, favoring the neighbor closest to the target.
  let current=null,currentDist=Infinity;
@@ -401,10 +407,10 @@ function steerTeacherWaypoints(t,target,dt,speed){
   const d=(n.x-p.x)**2+(n.z-p.z)**2;
   if(d<currentDist){currentDist=d;current=n}
  }
- if(!current)return false;
+ if(!current){brakeTeacher(t,dt);return false}
  // Traverse through validated bridges between neighboring navmesh polygons.
  let candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
- if(!candidates.length){t.localGridBlocked=true;return false}
+ if(!candidates.length){t.localGridRetryAt=elapsed+.45;brakeTeacher(t,dt);return false}
  const previous=t.localGridLastNode;
  let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
   Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
@@ -422,12 +428,23 @@ function steerTeacherWaypoints(t,target,dt,speed){
  const crossLen=Math.hypot(next.x-(portal?.x??next.x),next.z-(portal?.z??next.z))||1;
  const aim=portal?{x:portal.x+(next.x-portal.x)/crossLen*.38,z:portal.z+(next.z-portal.z)/crossLen*.38}:next;
  const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};return true}
- const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
- if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){t.localGridBlocked=true;return false}
+ if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};brakeTeacher(t,dt);return true}
+ // Velocity-based movement: accelerate smoothly, slow down before the portal,
+ // and apply the actual velocity to position instead of teleporting by a fixed step.
+ const acceleration=9.5;
+ const stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));
+ const desiredSpeed=Math.min(speed,stoppingSpeed);
+ const desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
+ const blend=1-Math.exp(-acceleration*Math.max(0,dt));
+ t.velocity.x=THREE.MathUtils.lerp(t.velocity.x,desiredX,blend);
+ t.velocity.z=THREE.MathUtils.lerp(t.velocity.z,desiredZ,blend);
+ const nx=p.x+t.velocity.x*dt,nz=p.z+t.velocity.z*dt;
+ if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
+  brakeTeacher(t,dt);t.localGridRetryAt=elapsed+.45;return false;
+ }
  p.x=nx;p.z=nz;
  if(dist<.3)t.localGridLastNode={x:current.x,z:current.z};
- t.moveDir.set(dx/dist,0,dz/dist);
+ if(t.velocity.lengthSq()>.0025)t.moveDir.copy(t.velocity).setY(0).normalize();
  const angle=Math.atan2(dx,dz);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
  return true;
@@ -483,10 +500,10 @@ function stepTeacher(t,dt){
  if(phaseTime<DAY){
   const home=t.home.clone().sub(p).setY(0);
   if(home.length()>.65){steerTeacherWaypoints(t,t.home,dt,t.speed);if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}
-  else if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}
+  else{brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}}
   return;
  }
- if(elapsed<(t.root.userData.stagger||0)){if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
+ if(elapsed<(t.root.userData.stagger||0)){brakeTeacher(t,dt);if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const ud=t.root.userData;
  const currentDead=(ud.chaseTarget===player.pos&&dead)||survivors.some(s=>s.root.position===ud.chaseTarget&&s.dead);
  if(!ud.chaseTarget||elapsed>=(ud.chaseUntil||0)||currentDead){

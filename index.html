@@ -476,9 +476,35 @@ function steerTeacherWaypoints(t,target,dt,speed){
  t.targetPolygonRouteKey=null;
  t.lastKnownTarget=null;
  t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;t.polygonBlockedPortals??=new Set();
- // Keep the independent exploration score available as a fallback if the
- // target polygon is disconnected or no valid portal route can be found.
- 
+ // If the teacher remains in the same polygon for 900ms, retrace the DFS
+ // polygon trail toward its parent to escape a trapped/dead-end position.
+ if(t.polygonStayKey!==current.polygonKey){
+  t.polygonStayKey=current.polygonKey;
+  t.polygonStayAt=elapsed;
+  t.polygonRetraceActive=false;
+ }else if(!t.polygonRetraceActive&&elapsed-(t.polygonStayAt??elapsed)>=.9){
+  let parent=t.polygonVisitPath.length?t.polygonVisitPath[t.polygonVisitPath.length-1]:null;
+  const connected=(key)=>(current.bridges||[]).some(link=>nodes[link.to]?.polygonKey===key);
+  if(parent&&!connected(parent))parent=null;
+  if(!parent){
+   const visitedNeighbor=(current.bridges||[])
+    .map(link=>nodes[link.to])
+    .find(node=>node&&t.visitedPolygons.has(node.polygonKey)&&
+      !t.polygonBlockedPortals.has(current.polygonKey+'>'+node.polygonKey));
+   parent=visitedNeighbor?.polygonKey||null;
+  }
+  if(parent){
+   if(t.polygonVisitPath[t.polygonVisitPath.length-1]===parent)t.polygonVisitPath.pop();
+   t.polygonVisitGoal=parent;
+   t.polygonProgressGoal=parent;
+   t.polygonProgressAt=elapsed;
+   t.polygonProgressPos.copy(p);
+   t.polygonRetraceActive=true;
+  }else{
+   // No saved parent: restart the stay timer so a newly opened branch can be tried.
+   t.polygonStayAt=elapsed;
+  }
+ }
  // Every polygon receives a simple exploration score: unvisited = 1, visited = 0.
  // Teachers always prefer the highest-scoring reachable neighbor; visited polygons
  // remain available only for retracing the DFS route to an unexplored frontier.

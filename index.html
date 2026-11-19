@@ -52,7 +52,7 @@ box(0,-.45,0,100,.5,100,mat(0x424a43),false);const groundPlane=new THREE.Mesh(ne
 for(let x=-50;x<=50;x+=10){wallBox(x,1.5,-40,10,3,.2);wallBox(x,1.5,40,10,3,.2)}
 const player={pos:new THREE.Vector3(0,0,0),yaw:0,pitch:0};camera.position.set(0,1.65,0);
 const loader=new GLTFLoader();const assets={circle:'fundamental_paper_education_-_miss_circles.glb',thavel:'fundamental_paper_education_-_miss_thavel.glb',bloomie:'fundamental_paper_education_-_miss_bloomie.glb'};
-function makeSurvivor(i){const g=new THREE.Group(),skin=mat(0xe0b99b),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][i]),pants=mat(0x303747);const part=(geo,m,x,y,z)=>{const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);g.add(o);return o};part(new THREE.SphereGeometry(.22,10,8),skin,0,1.62,0);part(new THREE.SphereGeometry(.23,10,8),mat(0x34251e),0,1.78,-.025);part(new THREE.BoxGeometry(.48,.62,.25),shirt,0,1.12,0);const arms=[part(new THREE.BoxGeometry(.16,.55,.18),skin,-.32,1.12,0),part(new THREE.BoxGeometry(.16,.55,.18),skin,.32,1.12,0)],legs=[part(new THREE.BoxGeometry(.19,.55,.2),pants,-.13,.48,0),part(new THREE.BoxGeometry(.19,.55,.2),pants,.13,.48,0)];g.position.set((i-1.5)*3,0,7+Math.random()*4);scene.add(g);g.userData.curvedVector=new THREE.Vector3(0,0,-1);return {root:g,arms,legs,moveDir:new THREE.Vector3(0,0,-1),hp:100,dead:false,respawn:0,target:null,phase:Math.random()*6}}
+function makeSurvivor(i){const g=new THREE.Group(),skin=mat(0xe0b99b),shirt=mat([0x3e78a8,0x8c4b82,0x4c9568,0xb47736][i]),pants=mat(0x303747);const part=(geo,m,x,y,z)=>{const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);g.add(o);return o};part(new THREE.SphereGeometry(.22,10,8),skin,0,1.62,0);part(new THREE.SphereGeometry(.23,10,8),mat(0x34251e),0,1.78,-.025);part(new THREE.BoxGeometry(.48,.62,.25),shirt,0,1.12,0);const arms=[part(new THREE.BoxGeometry(.16,.55,.18),skin,-.32,1.12,0),part(new THREE.BoxGeometry(.16,.55,.18),skin,.32,1.12,0)],legs=[part(new THREE.BoxGeometry(.19,.55,.2),pants,-.13,.48,0),part(new THREE.BoxGeometry(.19,.55,.2),pants,.13,.48,0)];const spawn=findOpenSchoolPoint((i-1.5)*3,7+Math.random()*4,8);g.position.copy(spawn);scene.add(g);g.userData.curvedVector=new THREE.Vector3(0,0,-1);return {root:g,arms,legs,moveDir:new THREE.Vector3(0,0,-1),hp:100,dead:false,respawn:0,target:null,phase:Math.random()*6}}
 for(let i=0;i<4;i++)survivors.push(makeSurvivor(i));
 function spawnItem(kind,x,z,save=true){if(save)initialItems.push({kind,x,z});const mesh=new THREE.Group();if(kind==='paper'){const sheet=new THREE.Mesh(new THREE.BoxGeometry(.42,.025,.32),paperMat);sheet.rotation.y=Math.random()*Math.PI;mesh.add(sheet);const fold=new THREE.Mesh(new THREE.BoxGeometry(.09,.028,.09),mat(0xffffff));fold.position.set(.15,.018,-.1);mesh.add(fold);for(let i=0;i<3;i++){const line=new THREE.Mesh(new THREE.BoxGeometry(.2,.006,.012),mat(0x999999));line.position.set(0,.018,(i-1)*.055);mesh.add(line)}}else{const a=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.075,24),oreoMat),cream=new THREE.Mesh(new THREE.CylinderGeometry(.205,.205,.035,24),creamMat),b=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.075,24),oreoMat);a.position.y=.055;cream.position.y=0;b.position.y=-.055;mesh.add(a,cream,b);for(let n=0;n<8;n++){const dot=new THREE.Mesh(new THREE.SphereGeometry(.018,6,5),mat(0x17110f));dot.position.set(Math.cos(n*Math.PI/4)*.13,.095,Math.sin(n*Math.PI/4)*.13);mesh.add(dot)}}mesh.position.set(x,.18,z);scene.add(mesh);items.push({kind,mesh})}
 for(let i=0;i<38;i++)spawnItem(Math.random()<.7?'paper':'oreo',Math.random()*56-28,Math.random()*56-28);
@@ -156,6 +156,28 @@ function schoolScoreAt(x,z){
  return schoolScoreMap[iz*schoolScoreCols+ix];
 }
 function teacherGroundScore(x,z){return schoolScoreAt(x,z)}
+// Keep survivor centers and their full body footprint outside desk clearance zones.
+// Search outward from the preferred point instead of allowing an invalid spawn to persist.
+function findOpenSchoolPoint(x,z,maxRadius=10){
+ const clear=(px,pz)=>{
+  const r=.43,samples=[[0,0],[r,0],[-r,0],[0,r],[0,-r],[r*.7,r*.7],[r*.7,-r*.7],[-r*.7,r*.7],[-r*.7,-r*.7]];
+  return samples.every(([ox,oz])=>teacherGroundScore(px+ox,pz+oz)===1);
+ };
+ if(clear(x,z))return new THREE.Vector3(x,0,z);
+ for(let radius=.5;radius<=maxRadius;radius+=.5){
+  const count=Math.max(12,Math.ceil(radius*10));
+  for(let i=0;i<count;i++){
+   const a=i/count*Math.PI*2,px=x+Math.cos(a)*radius,pz=z+Math.sin(a)*radius;
+   if(clear(px,pz))return new THREE.Vector3(px,0,pz);
+  }
+ }
+ // Deterministic open fallback near the central hall.
+ for(let radius=0;radius<=24;radius+=.5)for(let i=0;i<24;i++){
+  const a=i/24*Math.PI*2,px=Math.cos(a)*radius,pz=8+Math.sin(a)*radius;
+  if(clear(px,pz))return new THREE.Vector3(px,0,pz);
+ }
+ return new THREE.Vector3(0,0,8);
+}
 
 function buildTeacherBreadcrumbs(t,target){
  // Sequential teacher breadcrumbs with bounded detours around desks.
@@ -391,16 +413,28 @@ function brakeTeacher(t,dt){
  if(t.velocity&&t.velocity.lengthSq()<.0025)t.velocity.set(0,0,0);
 }
 function steerTeacherWaypoints(t,target,dt,speed){
- const p=t.root.position,goal=target.clone().setY(0),grid=t.localGrid;
+ const p=t.root.position,rawGoal=target.clone().setY(0),grid=t.localGrid;
  const needsGrid=!grid||Math.hypot(p.x-grid.centerX,p.z-grid.centerZ)>6||
-  Math.hypot(goal.x-grid.targetX,goal.z-grid.targetZ)>2.2||
+  Math.hypot(rawGoal.x-grid.targetX,rawGoal.z-grid.targetZ)>2.2||
   elapsed-grid.builtAt>1.1||
   (t.localGridRetryAt!==undefined&&elapsed>=t.localGridRetryAt);
- if(needsGrid){t.localGrid=buildTeacherLocalGrid(t,goal);t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null}
+ if(needsGrid){
+  t.localGrid=buildTeacherLocalGrid(t,rawGoal);
+  t.localGridRetryAt=elapsed+.45;t.localGridLastNode=null;t.localGridPortalLock=null;
+ }
  const nodes=t.localGrid?.nodes;
  if(!nodes?.length){brakeTeacher(t,dt);return false;}
- // Follow one actual bridge at a time: find the nearest node and choose one
- // of its ray-validated neighbors, favoring the neighbor closest to the target.
+ // If a survivor is standing inside/against furniture, pursue the nearest
+ // walkable polygon center instead of steering toward an unreachable body center.
+ let goalNode=null,goalNodeDist=Infinity;
+ for(const n of nodes){
+  const d=(n.x-rawGoal.x)**2+(n.z-rawGoal.z)**2;
+  if(d<goalNodeDist){goalNodeDist=d;goalNode=n}
+ }
+ const goal=goalNode&&goalNodeDist<30.25?
+  new THREE.Vector3(goalNode.x,0,goalNode.z):rawGoal;
+ // Locate the polygon containing the teacher; nearest-centroid fallback handles
+ // tiny numerical gaps at polygon edges.
  let current=null,currentDist=Infinity;
  for(const n of nodes)if(teacherPointInPolygon(p.x,p.z,n.polygon)){current=n;break}
  if(!current)for(const n of nodes){
@@ -408,42 +442,62 @@ function steerTeacherWaypoints(t,target,dt,speed){
   if(d<currentDist){currentDist=d;current=n}
  }
  if(!current){brakeTeacher(t,dt);return false}
- // Traverse through validated bridges between neighboring navmesh polygons.
- let candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
- if(!candidates.length){t.localGridRetryAt=elapsed+.45;brakeTeacher(t,dt);return false}
- const previous=t.localGridLastNode;
- let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
-  Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
- if(previous&&candidates.length>1){
-  const notBack=candidates.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-  if(notBack.length)forward=forward.filter(c=>notBack.includes(c));
+ const candidates=(current.bridges||[]).map(link=>({node:nodes[link.to],link})).filter(c=>c.node?.walkable);
+ if(!candidates.length){t.localGridPortalLock=null;t.localGridRetryAt=elapsed+.45;brakeTeacher(t,dt);return false}
+ // Hold the selected portal until it is crossed. This hysteresis prevents
+ // neighboring polygons from repeatedly swapping the desired bridge mid-step.
+ let chosen=null,lock=t.localGridPortalLock;
+ if(lock&&lock.from===current.id){
+  const held=candidates.find(c=>c.node.id===lock.to);
+  if(held){
+   const portal=held.link.midpoint;
+   if(Math.hypot(p.x-portal.x,p.z-portal.z)>.32)chosen=held;
+  }
  }
- let pool=forward.length?forward:candidates;
- if(previous&&pool.length>1){
-  const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
-  if(notBack.length)pool=notBack;
+ if(!chosen){
+  const previous=t.localGridLastNode;
+  let forward=candidates.filter(c=>Math.hypot(goal.x-c.node.x,goal.z-c.node.z)<
+   Math.hypot(goal.x-current.x,goal.z-current.z)-.015);
+  if(previous&&candidates.length>1){
+   const notBack=candidates.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
+   if(notBack.length)forward=forward.filter(c=>notBack.includes(c));
+  }
+  let pool=forward.length?forward:candidates;
+  if(previous&&pool.length>1){
+   const notBack=pool.filter(c=>Math.hypot(c.node.x-previous.x,c.node.z-previous.z)>.2);
+   if(notBack.length)pool=notBack;
+  }
+  pool.sort((a,b)=>{
+   const da=Math.hypot(goal.x-a.node.x,goal.z-a.node.z);
+   const db=Math.hypot(goal.x-b.node.x,goal.z-b.node.z);
+   if(Math.abs(da-db)>.025)return da-db;
+   const heading=t.velocity?.lengthSq()>.01?t.velocity: t.moveDir;
+   const align=c=>{const dx=c.link.midpoint.x-p.x,dz=c.link.midpoint.z-p.z,l=Math.hypot(dx,dz)||1;return (dx*heading.x+dz*heading.z)/l};
+   return align(b)-align(a)||a.node.id-b.node.id;
+  });
+  chosen=pool[0];
+  t.localGridPortalLock={from:current.id,to:chosen.node.id};
  }
- pool.sort((a,b)=>Math.hypot(goal.x-a.node.x,goal.z-a.node.z)-Math.hypot(goal.x-b.node.x,goal.z-b.node.z));
- const chosen=pool[0],next=chosen.node,portal=chosen.link.midpoint;
- const crossLen=Math.hypot(next.x-(portal?.x??next.x),next.z-(portal?.z??next.z))||1;
- const aim=portal?{x:portal.x+(next.x-portal.x)/crossLen*.38,z:portal.z+(next.z-portal.z)/crossLen*.38}:next;
+ const next=chosen.node,portal=chosen.link.midpoint;
+ const crossLen=Math.hypot(next.x-portal.x,next.z-portal.z)||1;
+ const aim={x:portal.x+(next.x-portal.x)/crossLen*.38,z:portal.z+(next.z-portal.z)/crossLen*.38};
  const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
- if(dist<.06){t.localGridLastNode={x:current.x,z:current.z};brakeTeacher(t,dt);return true}
- // Velocity-based movement: accelerate smoothly, slow down before the portal,
- // and apply the actual velocity to position instead of teleporting by a fixed step.
- const acceleration=9.5;
- const stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));
- const desiredSpeed=Math.min(speed,stoppingSpeed);
- const desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
+ if(dist<.06){
+  t.localGridLastNode={x:current.x,z:current.z};t.localGridPortalLock=null;brakeTeacher(t,dt);return true;
+ }
+ const acceleration=9.5,stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));
+ const desiredSpeed=Math.min(speed,stoppingSpeed),desiredX=dx/dist*desiredSpeed,desiredZ=dz/dist*desiredSpeed;
  const blend=1-Math.exp(-acceleration*Math.max(0,dt));
  t.velocity.x=THREE.MathUtils.lerp(t.velocity.x,desiredX,blend);
  t.velocity.z=THREE.MathUtils.lerp(t.velocity.z,desiredZ,blend);
  const nx=p.x+t.velocity.x*dt,nz=p.z+t.velocity.z*dt;
  if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
-  brakeTeacher(t,dt);t.localGridRetryAt=elapsed+.45;return false;
+  brakeTeacher(t,dt);t.localGridRetryAt=elapsed+.45;t.localGridPortalLock=null;return false;
  }
  p.x=nx;p.z=nz;
- if(dist<.3)t.localGridLastNode={x:current.x,z:current.z};
+ if(Math.hypot(p.x-portal.x,p.z-portal.z)<.32){
+  t.localGridLastNode={x:current.x,z:current.z};t.localGridPortalLock=null;
+ }
  if(t.velocity.lengthSq()>.0025)t.moveDir.copy(t.velocity).setY(0).normalize();
  const angle=Math.atan2(dx,dz);
  t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
@@ -539,8 +593,8 @@ expandSchool();for(let ri=itemRespawns.length-1;ri>=0;ri--){const r=itemRespawns
 for(const s of survivors){
  if(s.dead){if(elapsed>s.respawn){s.dead=false;s.hp=100;s.root.visible=true;
   // Respawn only on a verified open floor cell; random coordinates could land inside desks/walls.
-  let spawn=null;for(let radius=0;radius<=14&&!spawn;radius+=.5)for(let a=0;a<48&&!spawn;a++){const ang=a*Math.PI/24,x=Math.cos(ang)*radius,z=8+Math.sin(ang)*radius;let open=true;for(const q of [[0,0],[.45,0],[-.45,0],[0,.45],[0,-.45]])if(teacherGroundScore(x+q[0],z+q[1])!==1){open=false;break}if(open&&teacherSegmentClear(x,z,x+.01,z))spawn=new THREE.Vector3(x,0,z)}
-  s.root.position.copy(spawn||new THREE.Vector3(0,0,8));s.root.rotation.y=0;s.anchors=null;s.moveDir.set(0,0,-1);s.phase=Math.random()*6;s.root.userData.curvedVector=new THREE.Vector3(0,0,-1);s.root.userData.teacherVector=new THREE.Vector3(0,0,-1);s.root.userData.recoveryTurn=1;s.root.userData.avoidSides=new Map();s.root.userData.collectFlow=null;s.root.userData.collectWaypoints=null;s.root.userData.collectItem=null;s.target=null}continue}
+  const spawn=findOpenSchoolPoint(0,8,16);
+  s.root.position.copy(spawn);s.root.rotation.y=0;s.anchors=null;s.moveDir.set(0,0,-1);s.phase=Math.random()*6;s.root.userData.curvedVector=new THREE.Vector3(0,0,-1);s.root.userData.teacherVector=new THREE.Vector3(0,0,-1);s.root.userData.recoveryTurn=1;s.root.userData.avoidSides=new Map();s.root.userData.collectFlow=null;s.root.userData.collectWaypoints=null;s.root.userData.collectItem=null;s.target=null}continue}
  let target=null,best=Infinity;for(const it of items){const d=it.mesh.position.distanceTo(s.root.position);if(d<best&&d<24){best=d;target=it}}
  if(target){
   const toItem=target.mesh.position.clone().sub(s.root.position).setY(0);
@@ -568,7 +622,7 @@ for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flow
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.set((i-1.5)*3,0,7+i);s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.localGrid=null;t.localGridIndex=0;t.localGridBlocked=false;t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.localGrid=null;t.localGridIndex=0;t.localGridBlocked=false;t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

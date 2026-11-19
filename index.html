@@ -62,8 +62,8 @@ for(let i=0;i<4;i++)survivors.push(makeSurvivor(i));
 function spawnItem(kind,x,z,save=true){if(save)initialItems.push({kind,x,z});const mesh=new THREE.Group();if(kind==='paper'){const sheet=new THREE.Mesh(new THREE.BoxGeometry(.42,.025,.32),paperMat);sheet.rotation.y=Math.random()*Math.PI;mesh.add(sheet);const fold=new THREE.Mesh(new THREE.BoxGeometry(.09,.028,.09),mat(0xffffff));fold.position.set(.15,.018,-.1);mesh.add(fold);for(let i=0;i<3;i++){const line=new THREE.Mesh(new THREE.BoxGeometry(.2,.006,.012),mat(0x999999));line.position.set(0,.018,(i-1)*.055);mesh.add(line)}}else{const a=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.075,24),oreoMat),cream=new THREE.Mesh(new THREE.CylinderGeometry(.205,.205,.035,24),creamMat),b=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.075,24),oreoMat);a.position.y=.055;cream.position.y=0;b.position.y=-.055;mesh.add(a,cream,b);for(let n=0;n<8;n++){const dot=new THREE.Mesh(new THREE.SphereGeometry(.018,6,5),mat(0x17110f));dot.position.set(Math.cos(n*Math.PI/4)*.13,.095,Math.sin(n*Math.PI/4)*.13);mesh.add(dot)}}mesh.position.set(x,.18,z);scene.add(mesh);items.push({kind,mesh})}
 for(let i=0;i<38;i++)spawnItem(Math.random()<.7?'paper':'oreo',Math.random()*56-28,Math.random()*56-28);
 function loadTeacher(key){loader.load(assets[key],g=>{
- const root=g.scene;root.scale.setScalar(key==='circle'?1.15:1);root.position.set(key==='circle'?0:-12,0,key==='circle'?-15:-12);scene.add(root);
- const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),active:null,moveDir:new THREE.Vector3(),velocity:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0};
+ const root=g.scene;root.scale.setScalar(key==='circle'?1.15:1);const spawn=key==='circle'?[0,-15]:key==='thavel'?[-12,-12]:[-15,-14];root.position.set(spawn[0],0,spawn[1]);scene.add(root);
+ const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),polygonProgressPos:root.position.clone(),polygonProgressAt:0,polygonBlockedPortals:new Set(),active:null,moveDir:new THREE.Vector3(),velocity:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0};
  teachers.push(t);teacherAnim(t,'idle');console.info('Teacher ready:',key,'clips:',g.animations.map(a=>a.name))
  },undefined,e=>console.warn('Teacher model failed',key,e))}
 loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
@@ -458,28 +458,42 @@ function steerTeacherWaypoints(t,target,dt,speed){
  t.teacherLostTargetLOS=true;
  // Exhaustively traverse every portal-connected polygon with depth-first
  // exploration. Never switch to a short target-biased route after a few rooms.
- t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;
+ t.visitedPolygons??=new Set();t.polygonVisitPath??=[];t.polygonVisitGoal??=null;t.polygonBlockedPortals??=new Set();
+ // Detect a teacher repeatedly trying to cross the same unreachable portal.
+ // After 1.25s without meaningful movement, blacklist only that directed edge
+ // and let DFS select another branch instead of orbiting the same corner.
+ t.polygonProgressPos??=p.clone();t.polygonProgressAt??=elapsed;
+ if(Math.hypot(p.x-t.polygonProgressPos.x,p.z-t.polygonProgressPos.z)>.14){
+  t.polygonProgressPos.copy(p);t.polygonProgressAt=elapsed;
+ }else if(t.polygonVisitGoal&&elapsed-t.polygonProgressAt>1.25){
+  t.polygonBlockedPortals.add(current.polygonKey+'>'+t.polygonVisitGoal);
+  t.polygonVisitGoal=null;t.polygonProgressAt=elapsed;t.polygonProgressPos.copy(p);brakeTeacher(t,dt);
+ }
  t.visitedPolygons.add(current.polygonKey);
  if(t.polygonVisitGoal===current.polygonKey)t.polygonVisitGoal=null;
  if(!t.polygonVisitGoal){
   const adjacent=(current.bridges||[])
    .map(link=>({node:nodes[link.to],link}))
    .filter(v=>v.node);
-  const unvisited=adjacent.filter(v=>!t.visitedPolygons.has(v.node.polygonKey))
-   .sort((a,b)=>a.node.id-b.node.id);
+  const seed=t.key==='circle'?1:t.key==='thavel'?2:3;
+  const order=(id)=>((Math.imul(id+1,2654435761)^Math.imul(seed,2246822519))>>>0);
+  const unvisited=adjacent.filter(v=>!t.visitedPolygons.has(v.node.polygonKey)&&!t.polygonBlockedPortals.has(current.polygonKey+'>'+v.node.polygonKey))
+   .sort((a,b)=>order(a.node.id)-order(b.node.id));
   if(unvisited.length){
    // Visit every unvisited branch before returning to the parent.
    t.polygonVisitPath.push(current.polygonKey);
    t.polygonVisitGoal=unvisited[0].node.polygonKey;
   }else if(t.polygonVisitPath.length){
    // Retrace the DFS parent route when this branch is exhausted.
-   t.polygonVisitGoal=t.polygonVisitPath.pop();
+   const parent=t.polygonVisitPath.pop();
+   if(!t.polygonBlockedPortals.has(current.polygonKey+'>'+parent))t.polygonVisitGoal=parent;
+   else t.polygonVisitGoal=null;
   }else{
    // Every polygon in this connected component has been searched.
    // Begin another complete sweep; do not abandon the component early.
-   t.visitedPolygons.clear();
+   t.visitedPolygons.clear();t.polygonBlockedPortals.clear();
    t.visitedPolygons.add(current.polygonKey);
-   const next=adjacent.slice().sort((a,b)=>a.node.id-b.node.id)[0];
+   const next=adjacent.slice().sort((a,b)=>order(a.node.id)-order(b.node.id))[0];
    if(next){
     t.polygonVisitPath.push(current.polygonKey);
     t.polygonVisitGoal=next.node.polygonKey;
@@ -637,7 +651,7 @@ for(const it of items){it.mesh.rotation.y+=dt*.7}if(showFlowGizmos&&elapsed-flow
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.visitedPolygons=new Set();t.polygonVisitPath=[];t.polygonVisitGoal=null;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.visitedPolygons=new Set();t.polygonVisitPath=[];t.polygonVisitGoal=null;t.polygonBlockedPortals=new Set();t.polygonProgressPos.copy(t.home);t.polygonProgressAt=0;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

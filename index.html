@@ -3,7 +3,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;background:#111;color:#fff;font:15px system-ui}canvas{display:block}#hud{position:fixed;z-index:3;top:12px;left:12px;background:#101722dd;border:1px solid #ffffff35;border-radius:10px;padding:12px 16px;min-width:220px;line-height:1.65}#hud b{color:#ffe36a}#msg{color:#ff8c8c}#start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#10131beF}#panel{max-width:560px;padding:32px;background:#202635;border:1px solid #ffffff35;border-radius:16px;text-align:center}button{font:inherit;font-weight:700;padding:12px 24px;border:0;border-radius:9px;background:#f0d65a;color:#181818;cursor:pointer}#hint{opacity:.75;font-size:13px}
 </style></head><body>
-<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span><br><button id="particles" style="padding:6px 10px;margin-top:6px">Teacher Particles: OFF (R)</button> <button id="flowToggle" style="padding:6px 10px;margin-top:6px">Flowfield: OFF (G)</button> <button id="navmeshToggle" style="padding:6px 10px;margin-top:6px">Navmesh: OFF (H)</button></div>
+<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span><br><button id="scoreToggle" style="padding:6px 10px;margin-top:6px">Ground Scores: OFF (H)</button></div>
 <div id="start"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><h2>REBUILT</h2><p>Fresh world architecture · same survival loop</p><p>Explore new chunks for papers and Oreos. Press E near pickups. Survive the teachers.</p><button id="play">NEW GAME</button><p id="hint">WASD move · Mouse look · Shift sprint · E collect / attack · Esc release mouse</p></div></div>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"}}
@@ -20,14 +20,10 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 // No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
-const obstacles=[],steeringBounds=[],navBlockers=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
+const obstacles=[],steeringBounds=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
 function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);navBlockers.push(o);o.userData.avoidVector=true}return o}
 function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
- // Invisible, subdivided navigation source laid directly on the real floor.
- // Teacher polygons are extracted from these ground triangles, not generated grid cells.
- const navGround=new THREE.Mesh(new THREE.PlaneGeometry(10,10,8,8),new THREE.MeshBasicMaterial({visible:false,side:THREE.DoubleSide}));
- navGround.rotation.x=-Math.PI/2;navGround.position.set(x,.006,z);scene.add(navGround);floors.push(navGround);
  box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
 if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
@@ -71,57 +67,17 @@ loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
 function teacherAnim(t,kind){if(!t||!t.mixer||!t.clips?.length)return;const patterns=kind==='attack'?['attack','hit','slap']:kind==='run'?['run','sprint']:kind==='walk'?['walk','move']:['idle','stand'];let clip=t.clips.find(a=>patterns.some(p=>a.name.toLowerCase().includes(p)));if(!clip)clip=t.clips[0];if(t.active===clip)return;t.mixer.stopAllAction();const action=t.mixer.clipAction(clip);action.reset().fadeIn(.18).play();t.active=clip;}
 // Expose animation controller on window so stale/isolated module callers can resolve it.
 window.teacherAnim=teacherAnim;
-let showTeacherNavmesh=false;const teacherNavmeshViz=new THREE.Group();scene.add(teacherNavmeshViz);let teacherNavmeshVizAt=0;
-function toggleTeacherNavmesh(){
- showTeacherNavmesh=!showTeacherNavmesh;
- const button=document.querySelector('#navmeshToggle');
- button.textContent='Navmesh: '+(showTeacherNavmesh?'ON':'OFF')+' (H)';
- teacherNavmeshViz.visible=showTeacherNavmesh;
- if(showTeacherNavmesh)drawTeacherNavmesh();
+let showGroundScores=false;const groundScoreViz=new THREE.Group();scene.add(groundScoreViz);let groundScoreVizVersion=-1;
+function toggleGroundScores(){showGroundScores=!showGroundScores;document.querySelector('#scoreToggle').textContent='Ground Scores: '+(showGroundScores?'ON':'OFF')+' (H)';groundScoreViz.visible=showGroundScores;if(showGroundScores)drawGroundScores()}
+document.querySelector('#scoreToggle').onclick=toggleGroundScores;
+function drawGroundScores(){
+ for(const child of groundScoreViz.children){child.geometry?.dispose();child.material?.dispose()}groundScoreViz.clear();if(!showGroundScores)return;
+ if(!schoolScoreMap)rebuildSchoolScoreMap();
+ const positions=[],colors=[],stride=Math.max(1,Math.ceil(Math.max(schoolScoreCols,schoolScoreRows)/280));
+ for(let iz=0;iz<schoolScoreRows;iz+=stride)for(let ix=0;ix<schoolScoreCols;ix+=stride){const id=iz*schoolScoreCols+ix;positions.push(schoolScoreMinX+(ix+.5)*SCHOOL_SCORE_CELL,.045,schoolScoreMinZ+(iz+.5)*SCHOOL_SCORE_CELL);if(schoolScoreMap[id])colors.push(.18,.95,.38);else colors.push(1,.12,.12)}
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));groundScoreViz.add(new THREE.Points(geo,new THREE.PointsMaterial({size:.19,vertexColors:true,sizeAttenuation:true})));groundScoreVizVersion=schoolScoreMapVersion;
 }
-document.querySelector('#navmeshToggle').onclick=toggleTeacherNavmesh;
-function clearTeacherNavmeshViz(){
- for(const child of teacherNavmeshViz.children){
-  child.geometry?.dispose();
-  if(Array.isArray(child.material))child.material.forEach(m=>m.dispose());else child.material?.dispose();
- }
- teacherNavmeshViz.clear();
-}
-function drawTeacherNavmesh(){
- clearTeacherNavmeshViz();if(!showTeacherNavmesh)return;
- const colors=[0x49e6ff,0xff6b9d,0xffdf59];
- teachers.forEach((t,index)=>{
-  const grid=globalTeacherNavmesh,nodes=grid?.nodes;if(!nodes?.length)return;
-  const polygonLines=[],portalLines=[],centers=[];
-  const color=colors[index%colors.length];
-  for(const node of nodes){
-   const poly=node.polygon;if(!poly?.length)continue;
-   for(let k=0;k<poly.length;k++){
-    const a=poly[k],b=poly[(k+1)%poly.length];
-    polygonLines.push(a.x,.10,a.z,b.x,.10,b.z);
-   }
-   centers.push(node.x,.13,node.z);
-   for(const bridge of node.bridges||[]){
-    if(node.id>bridge.to)continue;
-    const a=bridge.a,b=bridge.b;
-    portalLines.push(a.x,.16,a.z,b.x,.16,b.z);
-   }
-  }
-  if(polygonLines.length){
-   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(polygonLines,3));
-   teacherNavmeshViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.58})));
-  }
-  if(portalLines.length){
-   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(portalLines,3));
-   teacherNavmeshViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.95})));
-  }
-  if(centers.length){
-   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(centers,3));
-   teacherNavmeshViz.add(new THREE.Points(geo,new THREE.PointsMaterial({color,size:.055,sizeAttenuation:true})));
-  }
- });
-}
-let showFlowGizmos=false;const flowViz=new THREE.Group();scene.add(flowViz);let flowVizAt=0;function toggleFlow(){showFlowGizmos=!showFlowGizmos;document.querySelector('#flowToggle').textContent='Flowfield: '+(showFlowGizmos?'ON':'OFF')+' (G)';flowViz.visible=showFlowGizmos;if(showFlowGizmos)drawFlowGizmos()}document.querySelector('#flowToggle').onclick=toggleFlow;function drawFlowGizmos(){flowViz.clear();if(!showFlowGizmos)return;const fields=[];for(const t of teachers)if(t.root.userData.teacherFlow)fields.push({f:t.root.userData.teacherFlow,color:0xff5555});for(const s of survivors)if(!s.dead&&s.root.userData.collectFlow)fields.push({f:s.root.userData.collectFlow,color:0x55ddff});for(const {f,color} of fields){const positions=[];const stride=Math.max(2,Math.floor(2.5/f.cell));for(let z=0;z<f.rows;z+=stride)for(let x=0;x<f.cols;x+=stride){const id=z*f.cols+x,dx=f.vx[id],dz=f.vz[id];if((!dx&&!dz)||f.dist[id]<0)continue;const m=Math.hypot(dx,dz);if(!m)continue;const px=f.minX+(x+.5)*f.cell,pz=f.minZ+(z+.5)*f.cell,len=f.cell*.65,ex=px+dx/m*len,ez=pz+dz/m*len,tip=.22,tx=-dz/m,tz=dx/m;positions.push(px,.08,pz,ex,.08,ez,ex,.08,ez,ex-dx/m*tip+tx*tip*.55,.08,ez-dz/m*tip+tz*tip*.55,ex,.08,ez,ex-dx/m*tip-tx*tip*.55,.08,ez-dz/m*tip-tz*tip*.55)}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));flowViz.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.8})))}}let showTeacherParticles=false;const teacherParticleViz=new THREE.Group();scene.add(teacherParticleViz);let teacherParticleVizAt=0;function toggleTeacherParticles(){showTeacherParticles=!showTeacherParticles;document.querySelector('#particles').textContent='Teacher Particles: '+(showTeacherParticles?'ON':'OFF')+' (R)';teacherParticleViz.visible=showTeacherParticles;if(showTeacherParticles)drawTeacherParticleViz()}document.querySelector('#particles').onclick=toggleTeacherParticles;function drawTeacherParticleViz(){teacherParticleViz.clear();if(!showTeacherParticles)return;for(const t of teachers){const route=t.particleRoute;if(!route?.length)continue;const pts=route.map(p=>new THREE.Vector3(p.x,.12,p.z));const geo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x46e8ff,transparent:true,opacity:.9})));const dotGeo=new THREE.BufferGeometry().setFromPoints(pts);teacherParticleViz.add(new THREE.Points(dotGeo,new THREE.PointsMaterial({color:0x9aff75,size:.19,sizeAttenuation:true})))}}const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE'){collectNearby();attack();}if(e.code==='KeyR')toggleTeacherParticles();if(e.code==='KeyG')toggleFlow();if(e.code==='KeyH')toggleTeacherNavmesh()});addEventListener('keyup',e=>keys[e.code]=false);
+const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE'){collectNearby();attack();}if(e.code==='KeyH')toggleGroundScores()});addEventListener('keyup',e=>keys[e.code]=false);
 let locked=false;renderer.domElement.addEventListener('click',()=>{if(started)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked||!started)return;player.yaw-=e.movementX*.0022;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.35,Math.min(1.35,player.pitch));camera.rotation.set(player.pitch,player.yaw,0)});
 function collectNearby(){
@@ -136,7 +92,7 @@ function collides(pos){const p=new THREE.Box3(new THREE.Vector3(pos.x-.38,.05,po
 // Teacher ground-score navigation: 1=open, 0=desk blocked. Walls intentionally score open.
 // Continuous ground score: directly test world-space positions against desk boxes. No grid, cells, or cached tiles.
 // Cached school-wide ground score raster. Cell values: 1=open, 0=desk/blocked.
-const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolWaypointNodes=[],schoolScoreObstacleCount=-1,schoolFlowMapVersion=0,schoolScoreTileCount=-1,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
+const SCHOOL_SCORE_CELL=.5;let schoolScoreMap=null,schoolWaypointNodes=[],schoolScoreObstacleCount=-1,schoolScoreMapVersion=0,schoolScoreTileCount=-1,schoolScoreMinX=-60,schoolScoreMinZ=-60,schoolScoreCols=240,schoolScoreRows=240;
 function rebuildSchoolScoreMap(){
  // Cover every generated school tile (plus a 10m safety border), not a fixed-size patch.
  let minTX=0,maxTX=0,minTZ=0,maxTZ=0;
@@ -147,16 +103,16 @@ function rebuildSchoolScoreMap(){
  const data=new Uint8Array(schoolScoreCols*schoolScoreRows);
  for(let iz=0;iz<schoolScoreRows;iz++)for(let ix=0;ix<schoolScoreCols;ix++){
   const x=schoolScoreMinX+(ix+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(iz+.5)*SCHOOL_SCORE_CELL;let open=1;
-  // Only desks/furniture (solid obstacle boxes) block field propagation. Walls are visual/non-solid and intentionally ignored.
-  for(const box of obstacles){if(x+.55>box.min.x&&x-.55<box.max.x&&z+.55>box.min.z&&z-.55<box.max.z){open=0;break}}
+  // Carve every score cell intersecting an object bound, including desks and wall bounds.
+  for(const bounds of steeringBounds){if(x+.55>bounds.min.x&&x-.55<bounds.max.x&&z+.55>bounds.min.z&&z-.55<bounds.max.z){open=0;break}}
   data[iz*schoolScoreCols+ix]=open;
  }
  // Pre-generate persistent waypoint blocks for every walkable cell across the explored map.
  schoolWaypointNodes=[];for(let id=0;id<data.length;id++)if(data[id])schoolWaypointNodes.push(id);
- schoolScoreMap=data;schoolScoreObstacleCount=obstacles.length;schoolScoreTileCount=generatedTiles.size;
+ schoolScoreMap=data;schoolScoreObstacleCount=steeringBounds.length;schoolScoreTileCount=generatedTiles.size;schoolScoreMapVersion++;
 }
 function schoolScoreAt(x,z){
- if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==steeringBounds.length)rebuildSchoolScoreMap();
  const ix=Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL),iz=Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);
  if(ix<0||iz<0||ix>=schoolScoreCols||iz>=schoolScoreRows)return 1;
  return schoolScoreMap[iz*schoolScoreCols+ix];
@@ -210,7 +166,7 @@ function buildTeacherBreadcrumbs(t,target){
 
 function buildTeacherFlowField(target){
  // BFS runs only when generating the field. Every open cell stores a vector to its parent cell toward the target.
- if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==obstacles.length)rebuildSchoolScoreMap();
+ if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==steeringBounds.length)rebuildSchoolScoreMap();
  const count=schoolScoreCols*schoolScoreRows,dist=new Int32Array(count);dist.fill(-1);
  const vx=new Float32Array(count),vz=new Float32Array(count),queue=new Int32Array(count);
  let tx=Math.floor((target.x-schoolScoreMinX)/SCHOOL_SCORE_CELL),tz=Math.floor((target.z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);

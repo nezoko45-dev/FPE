@@ -21,8 +21,8 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
 const obstacles=[],steeringBounds=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
-function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);navBlockers.push(o);o.userData.avoidVector=true}return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
+function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);o.userData.avoidVector=true}return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
  box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
@@ -156,8 +156,10 @@ function steerGroundScores(agent,target,dt,speed){
   if(score>bestScore){bestScore=score;best={x:vx,z:vz}}
  }
  if(!best)return false;
- const blend=1-Math.exp(-Math.max(0,dt)*5.5),vx=old.x+(best.x-old.x)*blend,vz=old.z+(best.z-old.z)*blend,len=Math.hypot(vx,vz)||1,dirX=vx/len,dirZ=vz/len,step=Math.min(speed*dt,.2),nx=p.x+dirX*step,nz=p.z+dirZ*step,steps=Math.max(2,Math.ceil(step/.1));
- for(let k=1;k<=steps;k++){const q=k/steps;if(teacherGroundScore(p.x+(nx-p.x)*q,p.z+(nz-p.z)*q)!==1)return false}
+ const blend=1-Math.exp(-Math.max(0,dt)*5.5),vx=old.x+(best.x-old.x)*blend,vz=old.z+(best.z-old.z)*blend,len=Math.hypot(vx,vz)||1,step=Math.min(speed*dt,.2);
+ let dirX=vx/len,dirZ=vz/len,nx=p.x+dirX*step,nz=p.z+dirZ*step,steps=Math.max(2,Math.ceil(step/.1));
+ const segmentClear=(ax,az,bx,bz)=>{for(let k=1;k<=steps;k++){const q=k/steps;if(teacherGroundScore(ax+(bx-ax)*q,az+(bz-az)*q)!==1)return false}return true};
+ if(!segmentClear(p.x,p.z,nx,nz)){dirX=best.x;dirZ=best.z;nx=p.x+dirX*step;nz=p.z+dirZ*step;if(!segmentClear(p.x,p.z,nx,nz))return false}
  p.x=nx;p.z=nz;ud.groundScoreDirection={x:dirX,z:dirZ};agent.moveDir.set(dirX,0,dirZ);
  const angle=Math.atan2(dirX,dirZ),delta=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));return true;
 }

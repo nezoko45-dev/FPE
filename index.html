@@ -733,12 +733,7 @@ function stepTeacher(t,dt){
   }
   return;
  }
- if(phaseTime<DAY){
-  const home=t.home.clone().sub(p).setY(0);
-  if(home.length()>.65){steerTeacherWaypoints(t,t.home,dt,t.speed);if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}}
-  else{brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}}
-  return;
- }
+ // Movement detection and capture rules apply throughout the school day and night.
  if(elapsed<(t.root.userData.stagger||0)){brakeTeacher(t,dt);if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const ud=t.root.userData;
  const ud=t.root.userData;

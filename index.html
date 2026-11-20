@@ -147,21 +147,33 @@ function brakeTeacher(t,dt){const damping=Math.exp(-10*Math.max(0,dt));t.velocit
 function steerGroundScores(agent,target,dt,speed){
  const root=agent.root,p=root.position,ud=root.userData,dx=target.x-p.x,dz=target.z-p.z,dist=Math.hypot(dx,dz);if(dist<.12)return false;
  const desired=Math.atan2(dx,dz),old=ud.groundScoreDirection||{x:agent.moveDir?.x||Math.sin(root.rotation.y),z:agent.moveDir?.z||Math.cos(root.rotation.y)};
- let best=null,bestScore=-Infinity;const look=Math.max(2,Math.min(3.8,1.25+speed*.55)),samples=Math.ceil(look/.22);
- for(let i=0;i<48;i++){const angle=i*Math.PI*2/48,vx=Math.sin(angle),vz=Math.cos(angle);let clear=0,blocked=false;
-  for(let k=1;k<=samples;k++){const d=k*.22;if(teacherGroundScore(p.x+vx*d,p.z+vz*d)!==1){blocked=true;break}clear++}
+ const step=Math.min(speed*Math.max(0,dt),.2),look=Math.max(1.8,Math.min(3.6,1.15+speed*.48)),samples=Math.ceil(look/.16);
+ const segmentClear=(ax,az,bx,bz)=>{const n=Math.max(2,Math.ceil(Math.hypot(bx-ax,bz-az)/.07));for(let k=1;k<=n;k++){const q=k/n;if(teacherGroundScore(ax+(bx-ax)*q,az+(bz-az)*q)!==1)return false}return true};
+ let best=null,bestScore=-Infinity;
+ // Score complete corridors, but reject any direction whose immediate movement segment clips a carved desk corner.
+ for(let i=0;i<72;i++){
+  const angle=i*Math.PI*2/72,vx=Math.sin(angle),vz=Math.cos(angle),nx=p.x+vx*step,nz=p.z+vz*step;
+  if(!segmentClear(p.x,p.z,nx,nz))continue;
+  let clear=0,blocked=false;
+  for(let k=1;k<=samples;k++){const d=k*.16;if(teacherGroundScore(p.x+vx*d,p.z+vz*d)!==1){blocked=true;break}clear++}
   if(!clear)continue;
-  const progress=dist-Math.hypot(target.x-(p.x+vx*look),target.z-(p.z+vz*look)),turn=Math.abs(Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y))),momentum=vx*old.x+vz*old.z,clearance=clear/samples;
-  const score=progress*3.1+Math.cos(angle-desired)*1.15+clearance*.62+momentum*.42-turn*.12+(blocked?0:.08);
+  const progress=dist-Math.hypot(target.x-(p.x+vx*look),target.z-(p.z+vz*look));
+  const turn=Math.abs(Math.atan2(Math.sin(angle-desired),Math.cos(angle-desired)));
+  const momentum=Math.max(-1,Math.min(1,vx*old.x+vz*old.z)),clearance=clear/samples;
+  // Relax turn resistance near a desk so the actor can make a full corner instead of stalling.
+  const turnWeight=blocked?.045:.11;
+  const score=progress*3.2+Math.cos(angle-desired)*1.05+clearance*.72+momentum*.2-turn*turnWeight;
   if(score>bestScore){bestScore=score;best={x:vx,z:vz}}
  }
  if(!best)return false;
- const blend=1-Math.exp(-Math.max(0,dt)*5.5),vx=old.x+(best.x-old.x)*blend,vz=old.z+(best.z-old.z)*blend,len=Math.hypot(vx,vz)||1,step=Math.min(speed*dt,.2);
- let dirX=vx/len,dirZ=vz/len,nx=p.x+dirX*step,nz=p.z+dirZ*step,steps=Math.max(2,Math.ceil(step/.1));
- const segmentClear=(ax,az,bx,bz)=>{for(let k=1;k<=steps;k++){const q=k/steps;if(teacherGroundScore(ax+(bx-ax)*q,az+(bz-az)*q)!==1)return false}return true};
- if(!segmentClear(p.x,p.z,nx,nz)){dirX=best.x;dirZ=best.z;nx=p.x+dirX*step;nz=p.z+dirZ*step;if(!segmentClear(p.x,p.z,nx,nz))return false}
+ // Turn toward the selected safe corridor without smoothing through the inside of a sharp corner.
+ let dirX=best.x,dirZ=best.z;
+ const blend=1-Math.exp(-Math.max(0,dt)*8),sx=old.x+(best.x-old.x)*blend,sz=old.z+(best.z-old.z)*blend,sl=Math.hypot(sx,sz)||1;
+ if(segmentClear(p.x,p.z,p.x+sx/sl*step,p.z+sz/sl*step)){dirX=sx/sl;dirZ=sz/sl}
+ const nx=p.x+dirX*step,nz=p.z+dirZ*step;
+ if(!segmentClear(p.x,p.z,nx,nz))return false;
  p.x=nx;p.z=nz;ud.groundScoreDirection={x:dirX,z:dirZ};agent.moveDir.set(dirX,0,dirZ);
- const angle=Math.atan2(dirX,dirZ),delta=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,delta));return true;
+ const angle=Math.atan2(dirX,dirZ),delta=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));root.rotation.y+=Math.max(-dt*9,Math.min(dt*9,delta));return true;
 }
 function groundScoreCellId(x,z){const ix=Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL),iz=Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);return ix<0||iz<0||ix>=schoolScoreCols||iz>=schoolScoreRows?-1:iz*schoolScoreCols+ix}
 function chooseGlobalGroundScoreGoal(t){

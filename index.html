@@ -487,9 +487,63 @@ function steerTeacherWaypoints(t,target,dt,speed){
  for(const n of nodes)if(teacherPointInPolygon(p.x,p.z,n.polygon)){current=n;break}
  if(!current)for(const n of nodes){const d=(n.x-p.x)**2+(n.z-p.z)**2;if(d<currentDist){currentDist=d;current=n}}
  if(!current){brakeTeacher(t,dt);return false}
- // Clear sight restores direct target pursuit. When walls/objects break LOS,
- // stay in the global polygon exploration routine below until sight is regained.
- if(teacherHasLineOfSight(t,target)&&moveTeacherToward(t,target,dt,speed)){
+ // Chase survivors through the global polygon graph even when they are
+ // completely outside line of sight. Rebuild the route only when either end
+ // enters a different polygon, so portal choices stay stable while moving.
+ let goal=null,goalDist=Infinity;
+ for(const n of nodes)if(teacherPointInPolygon(target.x,target.z,n.polygon)){goal=n;break}
+ if(!goal)for(const n of nodes){const d=(n.x-target.x)**2+(n.z-target.z)**2;if(d<goalDist){goalDist=d;goal=n}}
+ if(goal){
+  const routeKey=current.polygonKey+'>'+goal.polygonKey;
+  if(t.targetPolygonRouteKey!==routeKey||!Array.isArray(t.targetPolygonRoute)||!t.targetPolygonRoute.length){
+   const costs=new Map([[current.polygonKey,0]]),previous=new Map(),open=new Set([current.polygonKey]),byKey=new Map(nodes.map(n=>[n.polygonKey,n]));
+   while(open.size){
+    let key=null,best=Infinity;
+    for(const candidate of open){const cost=costs.get(candidate)??Infinity;if(cost<best){best=cost;key=candidate}}
+    if(key===null||key===goal.polygonKey)break;
+    open.delete(key);
+    const node=byKey.get(key);if(!node)continue;
+    for(const link of node.bridges||[]){
+     const next=nodes[link.to];if(!next)continue;
+     const weight=Math.hypot(next.x-node.x,next.z-node.z),cost=best+weight;
+     if(cost<(costs.get(next.polygonKey)??Infinity)){
+      costs.set(next.polygonKey,cost);
+      previous.set(next.polygonKey,{from:key,midpoint:link.midpoint});
+      open.add(next.polygonKey);
+     }
+    }
+   }
+   const chain=[];let key=goal.polygonKey,guard=0;
+   while(key!==current.polygonKey&&previous.has(key)&&guard++<nodes.length){
+    const step=previous.get(key);chain.unshift({from:step.from,to:key,midpoint:step.midpoint});key=step.from;
+   }
+   t.targetPolygonRoute=key===current.polygonKey?chain:null;
+   t.targetPolygonRouteKey=routeKey;
+  }
+  const route=t.targetPolygonRoute;
+  if(route&&route.length){
+   const step=route[0],link=(current.bridges||[]).find(v=>nodes[v.to]?.polygonKey===step.to);
+   if(link){
+    const portal=link.midpoint,dx=portal.x-p.x,dz=portal.z-p.z,dist=Math.hypot(dx,dz);
+    const aim={x:portal.x+(goal.x-portal.x)/Math.max(.001,Math.hypot(goal.x-portal.x,goal.z-portal.z))*.35,
+     z:portal.z+(goal.z-portal.z)/Math.max(.001,Math.hypot(goal.x-portal.x,goal.z-portal.z))*.35};
+    const adx=aim.x-p.x,adz=aim.z-p.z,ad=Math.hypot(adx,adz);
+    if(ad>.06){
+     const stepLen=Math.min(speed*dt,ad),nx=p.x+adx/ad*stepLen,nz=p.z+adz/ad*stepLen;
+     if(teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
+      p.x=nx;p.z=nz;t.moveDir.set(adx/ad,0,adz/ad);
+      const angle=Math.atan2(adx,adz);t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+      t.teacherLostTargetLOS=false;return true;
+     }
+    }
+   }
+  }else if(route&&current.polygonKey===goal.polygonKey&&moveTeacherToward(t,target,dt,speed)){
+   t.teacherLostTargetLOS=false;return true;
+  }
+ }
+ // If no target-directed polygon route is available, retain the global DFS
+ // exploration fallback rather than freezing at a disconnected polygon.
+ t.teacherLostTargetLOS=true;
   // Only discard exploration state after direct pursuit actually moves.
   // Clear upper-body LOS does not guarantee a clear floor-level route.
   t.teacherLostTargetLOS=false;

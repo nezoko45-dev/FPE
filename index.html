@@ -524,9 +524,9 @@ function steerTeacherWaypoints(t,target,dt,speed){
   if(route&&route.length){
    const step=route[0],link=(current.bridges||[]).find(v=>nodes[v.to]?.polygonKey===step.to);
    if(link){
-    const portal=link.midpoint,dx=portal.x-p.x,dz=portal.z-p.z,dist=Math.hypot(dx,dz);
-    const aim={x:portal.x+(goal.x-portal.x)/Math.max(.001,Math.hypot(goal.x-portal.x,goal.z-portal.z))*.35,
-     z:portal.z+(goal.z-portal.z)/Math.max(.001,Math.hypot(goal.x-portal.x,goal.z-portal.z))*.35};
+    const portal=link.midpoint,nextNode=nodes[link.to];
+    const towardX=nextNode.x-portal.x,towardZ=nextNode.z-portal.z,towardLen=Math.max(.001,Math.hypot(towardX,towardZ));
+    const aim={x:portal.x+towardX/towardLen*.35,z:portal.z+towardZ/towardLen*.35};
     const adx=aim.x-p.x,adz=aim.z-p.z,ad=Math.hypot(adx,adz);
     if(ad>.06){
      const stepLen=Math.min(speed*dt,ad),nx=p.x+adx/ad*stepLen,nz=p.z+adz/ad*stepLen;

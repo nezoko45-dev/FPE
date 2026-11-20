@@ -20,8 +20,8 @@ const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=ne
 // No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
-const obstacles=[],steeringBounds=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
-function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);o.userData.avoidVector=true}return o}
+const obstacles=[],steeringBounds=[],deskScoreBounds=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
+function box(x,y,z,w,h,d,m,solid=true,carveGroundScore=false){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);if(carveGroundScore)deskScoreBounds.push(bounds);o.userData.avoidVector=true}return o}
 function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
  box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
@@ -30,7 +30,7 @@ if(z===-30)wallBox(x,1.5,z-4.9,10,3,.2);
 if(x===-30)wallBox(x-4.9,1.5,z,.2,3,10);
 if(x===30)wallBox(x+4.9,1.5,z,.2,3,10);
 // South perimeter is deliberately open for a reliable exit.
-for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat);box(x+(i?2:-2),1.03,z+(i?1:-1),1.65,.08,1.05,trimMat)}
+for(let i=0;i<2;i++){box(x+(i?2:-2),.55,z+(i?1:-1),1.6,.9,1,deskMat,true,true);box(x+(i?2:-2),1.03,z+(i?1:-1),1.65,.08,1.05,trimMat,true,true)}
 const fixture=new THREE.Mesh(new THREE.BoxGeometry(1.4,.07,.3),mat(0xfff1c3));fixture.position.set(x,2.85,z);scene.add(fixture);lights.push({fixture});
 }
 const generatedTiles=new Set();
@@ -109,10 +109,10 @@ function rebuildSchoolScoreMap(){
  }
  // Pre-generate persistent waypoint blocks for every walkable cell across the explored map.
  schoolWaypointNodes=[];for(let id=0;id<data.length;id++)if(data[id])schoolWaypointNodes.push(id);
- schoolScoreMap=data;schoolScoreObstacleCount=steeringBounds.length;schoolScoreTileCount=generatedTiles.size;schoolScoreMapVersion++;
+ schoolScoreMap=data;schoolScoreObstacleCount=deskScoreBounds.length;schoolScoreTileCount=generatedTiles.size;schoolScoreMapVersion++;
 }
 function schoolScoreAt(x,z){
- if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==steeringBounds.length)rebuildSchoolScoreMap();
+ if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==deskScoreBounds.length)rebuildSchoolScoreMap();
  const ix=Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL),iz=Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);
  if(ix<0||iz<0||ix>=schoolScoreCols||iz>=schoolScoreRows)return 1;
  return schoolScoreMap[iz*schoolScoreCols+ix];

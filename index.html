@@ -22,7 +22,7 @@ const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness}
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
 const obstacles=[],steeringBounds=[],navBlockers=[],floors=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
 function box(x,y,z,w,h,d,m,solid=true){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);navBlockers.push(o);o.userData.avoidVector=true}return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));navBlockers.push(o);return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
  // Invisible, subdivided navigation source laid directly on the real floor.
  // Teacher polygons are extracted from these ground triangles, not generated grid cells.
@@ -359,7 +359,7 @@ function teacherGridRayClear(a,b){
  if(distance<.001)return true;
  teacherGridRaycaster.set(from,delta.normalize());
  teacherGridRaycaster.far=Math.max(0,distance-.035);
- return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
+ return teacherGridRaycaster.intersectObjects(navBlockers.filter(o=>!o.userData?.teacherIgnoreRaycast),false).length===0;
 }
 function teacherHasLineOfSight(t,target){
  const from=new THREE.Vector3(t.root.position.x,t.root.position.y+1.15,t.root.position.z);
@@ -368,7 +368,7 @@ function teacherHasLineOfSight(t,target){
  if(distance<.05)return true;
  teacherGridRaycaster.set(from,delta.normalize());
  teacherGridRaycaster.far=Math.max(0,distance-.12);
- return teacherGridRaycaster.intersectObjects(navBlockers,false).length===0;
+ return teacherGridRaycaster.intersectObjects(navBlockers.filter(o=>!o.userData?.teacherIgnoreRaycast),false).length===0;
 }
 function teacherPointInPolygon(x,z,poly){
  let inside=false;

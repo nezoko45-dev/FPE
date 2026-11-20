@@ -765,7 +765,7 @@ function stepTeacher(t,dt){
  const p=t.root.position,ud=t.root.userData;
  // Teachers stay inactive during the day; there is no idle patrol.
  if(phaseTime<DAY){
-  ud.chaseTarget=null;ud.chaseActor=null;
+  ud.chaseTarget=null;ud.chaseActor=null;ud.chaseStartedAt=0;
   brakeTeacher(t,dt);
   if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}
   return;
@@ -775,16 +775,36 @@ function stepTeacher(t,dt){
   if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}
   return;
  }
- // Keep the selected target indefinitely. Only a dead target is released.
+ // Keep chasing the current target indefinitely unless it dies. Other moving
+ // targets become eligible to replace it after the 11-second commitment window.
+ const movingCandidates=()=>{
+  const list=[];
+  if(!dead&&elapsed<playerMovedUntil)list.push({actor:'player',pos:player.pos});
+  for(const survivor of survivors)if(!survivor.dead&&elapsed<(survivor.moveDetectedUntil||0))
+   list.push({actor:survivor,pos:survivor.root.position});
+  return list;
+ };
  let actor=ud.chaseActor||null;
  if(actor==='player'){
   if(dead)actor=null;
  }else if(actor&&actor.dead)actor=null;
  if(!actor){
   ud.chaseActor=null;ud.chaseTarget=null;
-  const candidates=[...(!dead?[{actor:'player',pos:player.pos}]:[]),...survivors.filter(s=>!s.dead).map(s=>({actor:s,pos:s.root.position}))];
+  const candidates=movingCandidates();
   candidates.sort((a,b)=>p.distanceToSquared(a.pos)-p.distanceToSquared(b.pos));
-  if(candidates.length){actor=candidates[0].actor;ud.chaseActor=actor;ud.chaseTarget=actor==='player'?player.pos:actor.root.position}
+  if(candidates.length){
+   actor=candidates[0].actor;ud.chaseActor=actor;
+   ud.chaseTarget=actor==='player'?player.pos:actor.root.position;
+   ud.chaseStartedAt=elapsed;
+  }
+ }else{
+  const alternatives=movingCandidates().filter(candidate=>candidate.actor!==actor);
+  if(alternatives.length&&elapsed-(ud.chaseStartedAt??elapsed)>=11){
+   alternatives.sort((a,b)=>p.distanceToSquared(a.pos)-p.distanceToSquared(b.pos));
+   actor=alternatives[0].actor;ud.chaseActor=actor;
+   ud.chaseTarget=actor==='player'?player.pos:actor.root.position;
+   ud.chaseStartedAt=elapsed;
+  }
  }
  if(!actor){
   brakeTeacher(t,dt);
@@ -810,7 +830,7 @@ function stepTeacher(t,dt){
   if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}
   return;
  }
- // The same global polygon/portal route is used for every chase, not only exploration.
+ // The same global polygon/portal route is used for every chase, not just exploration.
  steerTeacherWaypoints(t,target,dt,t.speed);
  const state=distance<(t.animState==='run'?20:16)?'run':'walk';
  if(state!==t.animState){t.animState=state;teacherAnim(t,state)}

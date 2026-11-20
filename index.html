@@ -15,7 +15,7 @@ const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(76,innerW
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);
 const hemi=new THREE.HemisphereLight(0xe8f1ff,0x514638,1.9);scene.add(hemi);const sun=new THREE.DirectionalLight(0xffffff,2.1);sun.position.set(18,32,12);scene.add(sun);
 const DAY=150,NIGHT=480,TRANS=12;let phaseTime=0,nightMix=0,started=false,dead=false,respawnAt=0,hp=100,papers=0,oreos=0,elapsed=0,lastAttack=-99;
-let playerMovedUntil=0,playerCaptured=false;
+let playerMovedUntil=0;
 const daySky=new THREE.Color(0x9ba8b9),nightSky=new THREE.Color(0x101323),sky=new THREE.Color();scene.background=daySky.clone();
 // No fog, no cycle-driven visibility changes, no scene rebuild during transitions.
 const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
@@ -64,7 +64,7 @@ function spawnItem(kind,x,z,save=true){if(save)initialItems.push({kind,x,z});con
 for(let i=0;i<38;i++)spawnItem(Math.random()<.7?'paper':'oreo',Math.random()*56-28,Math.random()*56-28);
 function loadTeacher(key){loader.load(assets[key],g=>{
  const root=g.scene;root.scale.setScalar(key==='circle'?1.15:1);const spawn=key==='circle'?[0,-15]:key==='thavel'?[-12,-12]:[-14,-14];root.position.set(spawn[0],0,spawn[1]);scene.add(root);
- const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),polygonProgressPos:root.position.clone(),polygonProgressAt:0,polygonBlockedPortals:new Set(),active:null,moveDir:new THREE.Vector3(),velocity:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0,captureVictim:null,captureUntil:0};
+ const t={key,root,mixer:g.animations.length?new THREE.AnimationMixer(root):null,clips:g.animations,home:root.position.clone(),speed:key==='circle'?3.8:3.3,attackAt:0,lastDamageAt:-999,stuck:0,previous:root.position.clone(),polygonProgressPos:root.position.clone(),polygonProgressAt:0,polygonBlockedPortals:new Set(),active:null,moveDir:new THREE.Vector3(),velocity:new THREE.Vector3(),animState:'idle',particleRoute:null,particleIndex:1,particleTarget:null,particleRouteAt:0};
  teachers.push(t);teacherAnim(t,'idle');console.info('Teacher ready:',key,'clips:',g.animations.map(a=>a.name))
  },undefined,e=>console.warn('Teacher model failed',key,e))}
 loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
@@ -772,47 +772,56 @@ function followCoordinateTrail(agent,target,dt,speed){
 
 function stepTeacher(t,dt){
  const p=t.root.position,ud=t.root.userData;
- // Teachers are completely inactive during daytime; cancel any unfinished capture at dawn.
+ // Teachers stay inactive during the day; there is no idle patrol.
  if(phaseTime<DAY){
-  if(t.captureVictim?.kind==='player')playerCaptured=false;
-  t.captureVictim=null;ud.chaseTarget=null;ud.chaseUntil=0;
+  ud.chaseTarget=null;ud.chaseActor=null;
   brakeTeacher(t,dt);
   if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}
   return;
  }
- if(t.captureVictim){
-  const victim=t.captureVictim,actor=victim.kind==='survivor'?victim.actor:null,vp=victim.kind==='player'?player.pos:actor?.root.position;
-  if(!vp||actor?.dead){t.captureVictim=null;return}
-  const away=new THREE.Vector3(p.x-vp.x,0,p.z-vp.z);if(away.lengthSq()<.01)away.set(0,0,1);away.normalize();
-  const nx=p.x+away.x*Math.min(1.65*dt,.12),nz=p.z+away.z*Math.min(1.65*dt,.12);
-  if(teacherSegmentClear(p.x,p.z,nx,nz)){p.x=nx;p.z=nz}
-  t.root.rotation.y=Math.atan2(-away.x,-away.z);vp.set(p.x-away.x*1.05,0,p.z-away.z*1.05);t.moveDir.copy(away);
-  if(t.animState!=='walk'){t.animState='walk';teacherAnim(t,'walk')}
-  if(elapsed>=t.captureUntil){
-   if(victim.kind==='player'){playerCaptured=false;dead=true;respawnAt=elapsed+5;document.querySelector('#msg').textContent='TAKEN — respawning in 5 seconds'}
-   else if(actor){actor.dead=true;actor.hp=0;actor.respawn=elapsed+8;actor.root.visible=false;actor.root.userData.collectFlow=null;actor.root.userData.collectWaypoints=null}
-   t.captureVictim=null;t.root.userData.chaseTarget=null;t.root.userData.chaseUntil=0;
-  }
+ if(elapsed<(ud.stagger||0)){
+  brakeTeacher(t,dt);
+  if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}
   return;
  }
- // At night, only actively moving survivors or the player can be selected.
- if(elapsed<(ud.stagger||0)){brakeTeacher(t,dt);if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
- const currentDead=(ud.chaseTarget===player.pos&&(dead||playerCaptured))||survivors.some(s=>s.root.position===ud.chaseTarget&&s.dead);
- const movingTargets=[...(!dead&&!playerCaptured&&elapsed<playerMovedUntil?[player.pos]:[]),...survivors.filter(s=>!s.dead&&elapsed<(s.moveDetectedUntil||0)).map(s=>s.root.position)];
- if(!ud.chaseTarget||elapsed>=(ud.chaseUntil||0)||currentDead){
-  const pool=movingTargets.filter(pos=>pos!==ud.chaseTarget),available=pool.length?pool:movingTargets;
-  ud.chaseTarget=available.length?available[Math.floor(Math.random()*available.length)]:null;ud.chaseUntil=ud.chaseTarget?elapsed+11:0;
+ // Keep the selected target indefinitely. Only a dead target is released.
+ let actor=ud.chaseActor||null;
+ if(actor==='player'){
+  if(dead)actor=null;
+ }else if(actor&&actor.dead)actor=null;
+ if(!actor){
+  ud.chaseActor=null;ud.chaseTarget=null;
+  const candidates=[...(!dead?[{actor:'player',pos:player.pos}]:[]),...survivors.filter(s=>!s.dead).map(s=>({actor:s,pos:s.root.position}))];
+  candidates.sort((a,b)=>p.distanceToSquared(a.pos)-p.distanceToSquared(b.pos));
+  if(candidates.length){actor=candidates[0].actor;ud.chaseActor=actor;ud.chaseTarget=actor==='player'?player.pos:actor.root.position}
  }
- const target=ud.chaseTarget;
- if(!target||target===player.pos&&(dead||playerCaptured)){brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
- const nearest=p.distanceTo(target);
- if(nearest<1.55){
-  const actor=target===player.pos?null:survivors.find(a=>!a.dead&&a.root.position===target);
-  t.captureVictim=target===player.pos?{kind:'player'}:actor?{kind:'survivor',actor}:null;
-  if(t.captureVictim){t.captureUntil=elapsed+5;if(target===player.pos){playerCaptured=true;playerMovedUntil=0}brakeTeacher(t,dt);return}
+ if(!actor){
+  brakeTeacher(t,dt);
+  if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}
+  return;
  }
+ const target=actor==='player'?player.pos:actor.root.position;
+ ud.chaseTarget=target;
+ const distance=Math.hypot(target.x-p.x,target.z-p.z);
+ // Ordinary damage replaces the old grab/drag/taken sequence.
+ if(distance<1.8){
+  brakeTeacher(t,dt);
+  if(elapsed-(t.lastDamageAt||-999)>=.9){
+   t.lastDamageAt=elapsed;
+   if(actor==='player'){
+    hp=Math.max(0,hp-20);
+    if(hp<=0&&!dead){dead=true;respawnAt=elapsed+5;ud.chaseActor=null;ud.chaseTarget=null;document.querySelector('#msg').textContent='You were caught! Respawning in 5 seconds.'}
+   }else{
+    actor.hp=Math.max(0,(actor.hp??100)-20);
+    if(actor.hp<=0){actor.dead=true;actor.respawn=elapsed+8;actor.root.visible=false;actor.root.userData.collectFlow=null;actor.root.userData.collectWaypoints=null;ud.chaseActor=null;ud.chaseTarget=null}
+   }
+  }
+  if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}
+  return;
+ }
+ // The same global polygon/portal route is used for every chase, not only exploration.
  steerTeacherWaypoints(t,target,dt,t.speed);
- const state=nearest<(t.animState==='run'?20:16)?'run':'walk';
+ const state=distance<(t.animState==='run'?20:16)?'run':'walk';
  if(state!==t.animState){t.animState=state;teacherAnim(t,state)}
 }
 
@@ -900,7 +909,7 @@ function updateSurvivorWander(s,dt){
  s.legs[0].rotation.x=gait;s.legs[1].rotation.x=-gait;s.arms[0].rotation.x=-gait*.55;s.arms[1].rotation.x=gait*.55;
 }
 function update(dt){if(!started)return;elapsed+=dt;phaseTime=(phaseTime+dt)%(DAY+NIGHT);const soundtrack=phaseTime<DAY?'dayOst':'nightOst';for(const id of ['dayOst','nightOst']){const audio=document.getElementById(id);if(id===soundtrack){if(audio.paused){audio.volume=0.65;audio.play().catch(()=>{})}}else if(!audio.paused){audio.pause();audio.currentTime=0}}const blend=phaseTime<DAY?0:1;let trans=0;if(phaseTime<TRANS)trans=.5-phaseTime/(TRANS*2);else if(phaseTime>DAY-TRANS&&phaseTime<DAY+TRANS)trans=(phaseTime-(DAY-TRANS))/(TRANS*2);else if(phaseTime>DAY+NIGHT-TRANS)trans=1-(phaseTime-(DAY+NIGHT-TRANS))/(TRANS*2);nightMix=THREE.MathUtils.smoothstep(trans,0,1);sky.copy(daySky).lerp(nightSky,nightMix);scene.background.copy(sky);hemi.intensity=THREE.MathUtils.lerp(1.9,.85,nightMix);sun.intensity=THREE.MathUtils.lerp(2.1,.25,nightMix);sun.position.y=THREE.MathUtils.lerp(32,12,nightMix);lights.forEach(l=>{l.fixture.visible=true});
-if(dead&&elapsed>=respawnAt){dead=false;hp=100;player.pos.set(0,0,0);playerMovedUntil=0;playerCaptured=false;player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);document.querySelector('#msg').textContent='Respawned!';}if(!dead){if(!playerCaptured){const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0);const d=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(d.length())d.normalize().multiplyScalar((keys.ShiftLeft?8:5)*dt);const next=player.pos.clone().add(d);if(!collides(next)){if(next.distanceTo(player.pos)>.012)playerMovedUntil=elapsed+.45;player.pos.copy(next)}}camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.set(player.pitch,player.yaw,0)}
+if(dead&&elapsed>=respawnAt){dead=false;hp=100;player.pos.set(0,0,0);playerMovedUntil=0;player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);document.querySelector('#msg').textContent='Respawned!';}if(!dead){{const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0);const d=new THREE.Vector3(s,0,-f).applyAxisAngle(new THREE.Vector3(0,1,0),player.yaw);if(d.length())d.normalize().multiplyScalar((keys.ShiftLeft?8:5)*dt);const next=player.pos.clone().add(d);if(!collides(next)){if(next.distanceTo(player.pos)>.012)playerMovedUntil=elapsed+.45;player.pos.copy(next)}}camera.position.set(player.pos.x,1.65,player.pos.z);camera.rotation.set(player.pitch,player.yaw,0)}
 expandSchool();for(let ri=itemRespawns.length-1;ri>=0;ri--){const r=itemRespawns[ri];if(elapsed>=r.at){let x,z,tries=0;do{x=Math.random()*56-28;z=Math.random()*56-28;tries++}while(tries<60&&teacherGroundScore(x,z)!==1);if(teacherGroundScore(x,z)===1)spawnItem(r.kind,x,z,false);else spawnItem(r.kind,Math.random()*56-28,Math.random()*56-28,false);itemRespawns.splice(ri,1)}}for(const t of teachers){t.mixer?.update(dt);stepTeacher(t,dt)}
 for(const s of survivors){
  if(s.dead){if(elapsed>s.respawn){s.dead=false;s.hp=100;s.root.visible=true;const spawn=findOpenSchoolPoint(0,8,16);s.root.position.copy(spawn);s.lastObservedPos=spawn.clone();s.moveDetectedUntil=0;s.wanderTarget=null;s.collectTarget=null;s.collectRoute=null;s.collectRouteIndex=0;s.root.rotation.y=0}continue}
@@ -914,7 +923,7 @@ for(const s of survivors){
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;playerCaptured=false;playerMovedUntil=0;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.lastObservedPos=s.root.position.clone();s.moveDetectedUntil=0;s.wanderTarget=null;s.collectTarget=null;s.collectRoute=null;s.collectRouteIndex=0;s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.captureVictim=null;t.captureUntil=0;t.visitedPolygons=new Set();t.polygonVisitPath=[];t.polygonVisitGoal=null;t.polygonBlockedPortals=new Set();t.polygonProgressPos.copy(t.home);t.polygonProgressAt=0;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;playerMovedUntil=0;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.lastObservedPos=s.root.position.clone();s.moveDetectedUntil=0;s.wanderTarget=null;s.collectTarget=null;s.collectRoute=null;s.collectRouteIndex=0;s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.root.userData.chaseActor=null;t.root.userData.chaseTarget=null;t.lastDamageAt=-999;t.visitedPolygons=new Set();t.polygonVisitPath=[];t.polygonVisitGoal=null;t.polygonBlockedPortals=new Set();t.polygonProgressPos.copy(t.home);t.polygonProgressAt=0;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

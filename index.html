@@ -541,20 +541,11 @@ function steerTeacherWaypoints(t,target,dt,speed){
    t.teacherLostTargetLOS=false;return true;
   }
  }
- // If no target-directed polygon route is available, retain the global DFS
- // exploration fallback rather than freezing at a disconnected polygon.
+ // Never fall back to patrol/exploration during an active chase.
+ // If the target polygon is disconnected, wait for a valid polygon route.
  t.teacherLostTargetLOS=true;
-  // Only discard exploration state after direct pursuit actually moves.
-  // Clear upper-body LOS does not guarantee a clear floor-level route.
-  t.teacherLostTargetLOS=false;
-  // Pursuit is temporary movement, not a reset of the world-exploration map.
-  // Keep the DFS frontier and visited polygons so losing sight resumes the
-  // same global sweep instead of restarting near the target every time.
-  t.polygonVisitPath??=[];
-  t.visitedPolygons??=new Set();
-  t.polygonBlockedPortals??=new Set();
-  return true;
- }
+ brakeTeacher(t,dt);
+ return false;
  // Losing target LOS immediately switches back to polygon roaming.
  // Do not chase the last-known position or build a target-directed route.
  // Clear any stale pursuit route so exploration chooses the next score-1 polygon.
@@ -806,7 +797,7 @@ function stepTeacher(t,dt){
  // Ordinary damage replaces the old grab/drag/taken sequence.
  if(distance<1.8){
   brakeTeacher(t,dt);
-  if(elapsed-(t.lastDamageAt||-999)>=.9){
+  if(elapsed-(t.lastDamageAt??-999)>=.9){
    t.lastDamageAt=elapsed;
    if(actor==='player'){
     hp=Math.max(0,hp-20);

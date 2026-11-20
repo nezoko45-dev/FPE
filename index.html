@@ -436,6 +436,38 @@ function buildTeacherGlobalNavmesh(){
   type:'global-ground-triangle-navmesh',polygonCount:nodes.length,
   portalCount:nodes.reduce((n,v)=>n+v.bridges.length,0)/2};
 }
+function findTeacherBoundsOutlineDetour(t,target,nodes){
+ const p=t.root.position,goal={x:target.x,z:target.z};let best=null,bestScore=Infinity;
+ // Scan every object-bound outline in the global scene, not merely the nearest box.
+ for(const bounds of steeringBounds){
+  const pad=.68,minX=bounds.min.x-pad,maxX=bounds.max.x+pad,minZ=bounds.min.z-pad,maxZ=bounds.max.z+pad;
+  const width=maxX-minX,depth=maxZ-minZ,perimeter=2*(width+depth),steps=Math.max(8,Math.ceil(perimeter/.42));
+  for(let i=0;i<steps;i++){
+   let d=perimeter*i/steps,x,z;
+   if(d<width){x=minX+d;z=minZ}
+   else if((d-=width)<depth){x=maxX;z=minZ+d}
+   else if((d-=depth)<width){x=maxX-d;z=maxZ}
+   else{d-=width;x=minX;z=maxZ-d}
+   if(!nodes.some(node=>teacherPointInPolygon(x,z,node.polygon)))continue;
+   const from=Math.hypot(x-p.x,z-p.z),to=Math.hypot(goal.x-x,goal.z-z);
+   if(from<.55||from>12)continue;
+   if(!teacherGridRayClear(p,{x,z})||!teacherGridRayClear({x,z},goal))continue;
+   const score=from+to+Math.max(0,from+to-Math.hypot(goal.x-p.x,goal.z-p.z))*.35;
+   if(score<bestScore){bestScore=score;best={x,z}}
+  }
+ }
+ return best;
+}
+function moveTeacherViaBoundsOutline(t,point,dt,speed){
+ const p=t.root.position,dx=point.x-p.x,dz=point.z-p.z,dist=Math.hypot(dx,dz);
+ if(dist<.18){t.boundsOutlineDetour=null;return false}
+ const step=Math.min(speed*dt,dist),nx=p.x+dx/dist*step,nz=p.z+dz/dist*step;
+ if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz}))return false;
+ p.x=nx;p.z=nz;t.moveDir.set(dx/dist,0,dz/dist);
+ const angle=Math.atan2(dx,dz);
+ t.root.rotation.y+=Math.max(-dt*7,Math.min(dt*7,Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))));
+ return true;
+}
 function brakeTeacher(t,dt){
  const damping=Math.exp(-10*Math.max(0,dt));
  t.velocity?.multiplyScalar(damping);
@@ -599,11 +631,15 @@ function steerTeacherWaypoints(t,target,dt,speed){
  }
  const chosen=candidates[0],portal=chosen.link.midpoint;
  const crossLen=Math.hypot(chosen.node.x-portal.x,chosen.node.z-portal.z)||1;
- // Move decisively through the portal into the destination polygon. A tiny
- // offset can leave the teacher hovering on the shared edge, so it never
- // registers entry and keeps braking at the same point.
  const aim={x:portal.x+(chosen.node.x-portal.x)/crossLen*.85,
   z:portal.z+(chosen.node.z-portal.z)/crossLen*.85};
+ if(t.boundsOutlineDetour){
+  if(Math.hypot(t.boundsOutlineDetour.x-p.x,t.boundsOutlineDetour.z-p.z)<.2)t.boundsOutlineDetour=null;
+  else{
+   if(moveTeacherViaBoundsOutline(t,t.boundsOutlineDetour,dt,speed))return true;
+   t.boundsOutlineDetour=null;
+  }
+ }
  const dx=aim.x-p.x,dz=aim.z-p.z,dist=Math.hypot(dx,dz);
  if(dist<.06){brakeTeacher(t,dt);return true}
  const acceleration=9.5,stoppingSpeed=Math.sqrt(Math.max(0,2*acceleration*dist));
@@ -613,6 +649,14 @@ function steerTeacherWaypoints(t,target,dt,speed){
  t.velocity.z=THREE.MathUtils.lerp(t.velocity.z,desiredZ,blend);
  const nx=p.x+t.velocity.x*dt,nz=p.z+t.velocity.z*dt;
  if(!teacherGridRayClear({x:p.x,z:p.z},{x:nx,z:nz})){
+  // A blocked portal triggers a complete scan of all object-bound outlines.
+  // Only clear two-leg routes whose waypoint belongs to a walkable polygon qualify.
+  const detour=findTeacherBoundsOutlineDetour(t,aim,nodes);
+  if(detour){
+   t.boundsOutlineDetour={x:detour.x,z:detour.z};
+   brakeTeacher(t,dt);
+   if(moveTeacherViaBoundsOutline(t,t.boundsOutlineDetour,dt,speed))return true;
+  }
   brakeTeacher(t,dt);return false;
  }
  p.x=nx;p.z=nz;

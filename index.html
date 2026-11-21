@@ -259,9 +259,11 @@ function stepTeacher(t,dt){
 function updateSurvivorCollecting(s,dt){
  const p=s.root.position;if(!items.length){s.collectTarget=null;return false}
  if(s.collectTarget&&!items.includes(s.collectTarget))s.collectTarget=null;
- if(s.collectTarget&&Math.hypot(p.x-s.collectTarget.mesh.position.x,p.z-s.collectTarget.mesh.position.z)<1.05){const it=s.collectTarget,idx=items.indexOf(it);if(idx>=0){scene.remove(it.mesh);items.splice(idx,1);itemRespawns.push({kind:it.kind,at:elapsed+10})}s.collectTarget=null;s.collectRepathAt=0;return true}
- if(!s.collectTarget||elapsed>=(s.collectRepathAt||0)){let best=null,bestD=Infinity;for(const it of items){const x=it.mesh.position.x,z=it.mesh.position.z;if(teacherGroundScore(x,z)!==1)continue;const d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=it}}s.collectTarget=best;s.collectRepathAt=elapsed+1.1}
- if(!s.collectTarget)return false;const moved=steerGroundScores(s,s.collectTarget.mesh.position,dt,2.0);
+ if(s.collectTarget&&Math.hypot(p.x-s.collectTarget.mesh.position.x,p.z-s.collectTarget.mesh.position.z)<1.05){const it=s.collectTarget,idx=items.indexOf(it);if(idx>=0){scene.remove(it.mesh);items.splice(idx,1);itemRespawns.push({kind:it.kind,at:elapsed+10})}s.collectTarget=null;s.collectRepathAt=0;s.polyNext=-1;return true}
+ if(!s.collectTarget||elapsed>=(s.collectRepathAt||0)){let best=null,bestD=Infinity;for(const it of items){const x=it.mesh.position.x,z=it.mesh.position.z;if(teacherPolyAt(x,z)<0)continue;const d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=it}}s.collectTarget=best;s.collectRepathAt=elapsed+1.1;s.polyGoal=-1;s.polyNext=-1}
+ if(!s.collectTarget)return false;
+ // Survivors use the same adjacent-polygon portal traversal as teachers when collecting.
+ const moved=moveTeacherPolygons(s,s.collectTarget.mesh.position,dt,2.0);
  if(moved){const gait=Math.sin(elapsed*8+s.phase)*.38;s.legs[0].rotation.x=gait;s.legs[1].rotation.x=-gait;s.arms[0].rotation.x=-gait*.55;s.arms[1].rotation.x=gait*.55}return moved;
 }
 function updateSurvivorWander(s,dt){

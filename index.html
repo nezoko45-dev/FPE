@@ -172,19 +172,39 @@ function buildTeacherPolygonRoute(start,goal){
  if(parent[goal]===-2)return null;
  const route=[];for(let id=goal;id!==-1;id=parent[id])route.push(id);route.reverse();return route;
 }
+function buildTeacherPolygonRouteToPoint(start,x,z){
+ const m=teacherPolyMap,total=m.walk.length,parent=new Int32Array(total),queue=new Int32Array(total);parent.fill(-2);
+ let head=0,tail=0,best=start,bestD=Infinity;queue[tail++]=start;parent[start]=-1;
+ while(head<tail){
+  const id=queue[head++],cx=id%m.cols,cz=(id/m.cols)|0;
+  const px=m.originX+(cx+.5)*TEACHER_POLY_SIZE,pz=m.originZ+(cz+.5)*TEACHER_POLY_SIZE,d=(px-x)**2+(pz-z)**2;
+  if(d<bestD){bestD=d;best=id}
+  const next=[cx>0?id-1:-1,cx+1<m.cols?id+1:-1,cz>0?id-m.cols:-1,cz+1<m.rows?id+m.cols:-1];
+  for(const n of next)if(n>=0&&m.walk[n]&&parent[n]===-2){parent[n]=id;queue[tail++]=n}
+ }
+ const route=[];for(let id=best;id!==-1;id=parent[id])route.push(id);route.reverse();return {route,goal:best};
+}
 function moveTeacherPolygons(t,target,dt,speed){
- const p=t.root.position,start=teacherPolyAt(p.x,p.z),goal=teacherPolyAt(target.x,target.z);if(start<0||goal<0)return false;
- if(start===goal){t.polyPrevious=-1;t.polyNext=-1;t.polyGoal=goal;t.polyRoute=null;t.polyRouteIndex=0;return glideTeacherTo(t,target.x,target.z,dt,speed)}
- if(t.polyGoal!==goal||t.polyVersion!==teacherPolyVersion||!t.polyRoute){t.polyGoal=goal;t.polyVersion=teacherPolyVersion;t.polyRoute=buildTeacherPolygonRoute(start,goal);t.polyRouteIndex=0;t.polyNext=-1}
- const route=t.polyRoute;if(!route)return false;
+ const p=t.root.position,start=teacherPolyAt(p.x,p.z),requestedGoal=teacherPolyAt(target.x,target.z);if(start<0)return false;
+ let goal=requestedGoal,route=null;
+ if(goal>=0&&start===goal){t.polyPrevious=-1;t.polyNext=-1;t.polyGoal=goal;t.polyRoute=null;t.polyRouteIndex=0;return glideTeacherTo(t,target.x,target.z,dt,speed)}
+ if(t.polyGoal!==goal||t.polyVersion!==teacherPolyVersion||!t.polyRoute){
+  route=goal>=0?buildTeacherPolygonRoute(start,goal):null;
+  if(!route){const fallback=buildTeacherPolygonRouteToPoint(start,target.x,target.z);route=fallback.route;goal=fallback.goal;t.polyFallbackGoal=goal}
+  else t.polyFallbackGoal=-1;
+  t.polyGoal=goal;t.polyVersion=teacherPolyVersion;t.polyRoute=route;t.polyRouteIndex=0;t.polyNext=-1;
+ }
+ route=t.polyRoute;if(!route||!route.length)return false;
  let index=t.polyRouteIndex||0;
- // Never rewind the route index when the actor is still standing on a portal boundary.
- // The current cell can remain the previous polygon for a frame due to floating-point rounding.
  const found=route.indexOf(start,index);
  if(found>index){index=found;t.polyRouteIndex=found}
- if(index>=route.length-1)return glideTeacherTo(t,target.x,target.z,dt,speed);
+ if(index>=route.length-1){
+  const gx=goal===requestedGoal?target.x:teacherPolyMap.originX+((goal%teacherPolyMap.cols)+.5)*TEACHER_POLY_SIZE;
+  const gz=goal===requestedGoal?target.z:teacherPolyMap.originZ+(((goal/teacherPolyMap.cols)|0)+.5)*TEACHER_POLY_SIZE;
+  return glideTeacherTo(t,gx,gz,dt,speed);
+ }
  const from=route[index],next=route[index+1],portal=teacherPolygonPortal(from,next),dx=portal.x-p.x,dz=portal.z-p.z,d=Math.hypot(dx,dz);
- if(d<.075){t.polyRouteIndex=index+1;t.polyNext=-1;return true}
+ if(d<.025){t.polyRouteIndex=index+1;t.polyNext=-1;return true}
  const step=Math.min(speed*Math.max(0,dt),d),nx=p.x+dx/d*step,nz=p.z+dz/d*step;
  if(teacherPolyAt(nx,nz)<0){t.polyRoute=null;t.polyNext=-1;return false}
  p.x=nx;p.z=nz;const yaw=Math.atan2(dx,dz),delta=Math.atan2(Math.sin(yaw-t.root.rotation.y),Math.cos(yaw-t.root.rotation.y));t.root.rotation.y+=Math.max(-dt*8,Math.min(dt*8,delta));

@@ -150,7 +150,7 @@ function buildTeacherPolygonMap(){
  for(const key of generatedTiles){const [x,z]=key.split(',').map(Number);minX=Math.min(minX,x-5);maxX=Math.max(maxX,x+5);minZ=Math.min(minZ,z-5);maxZ=Math.max(maxZ,z+5)}
  const originX=Math.floor((minX-3)/TEACHER_POLY_SIZE)*TEACHER_POLY_SIZE,originZ=Math.floor((minZ-3)/TEACHER_POLY_SIZE)*TEACHER_POLY_SIZE;
  const cols=Math.ceil((maxX-minX+6)/TEACHER_POLY_SIZE)+2,rows=Math.ceil((maxZ-minZ+6)/TEACHER_POLY_SIZE)+2,walk=new Uint8Array(cols*rows);
- const clear=(x,z)=>{const r=.46,pts=[[0,0],[r,0],[-r,0],[0,r],[0,-r],[r*.7,r*.7],[r*.7,-r*.7],[-r*.7,r*.7],[-r*.7,-r*.7]];return pts.every(([dx,dz])=>{const px=x+dx,pz=z+dz;for(const b of steeringBounds)if(px>b.min.x-.06&&px<b.max.x+.06&&pz>b.min.z-.06&&pz<b.max.z+.06)return false;return true})};
+ const clear=(x,z)=>{const h=TEACHER_POLY_SIZE*.5,r=.42,pts=[[0,0],[h,0],[-h,0],[0,h],[0,-h],[h,h],[h,-h],[-h,h],[-h,-h]];return pts.every(([dx,dz])=>{const px=x+dx,pz=z+dz;for(const b of steeringBounds)if(px>b.min.x-r&&px<b.max.x+r&&pz>b.min.z-r&&pz<b.max.z+r)return false;return true})};
  for(let iz=0;iz<rows;iz++)for(let ix=0;ix<cols;ix++){const x=originX+(ix+.5)*TEACHER_POLY_SIZE,z=originZ+(iz+.5)*TEACHER_POLY_SIZE;if(clear(x,z))walk[iz*cols+ix]=1}
  teacherPolyMap={originX,originZ,cols,rows,walk};teacherPolyVersion++;teacherPolySignature=generatedTiles.size+':'+steeringBounds.length;
 }

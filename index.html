@@ -22,7 +22,7 @@ const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness}
 const floorMat=mat(0xb7b3a9),wallMat=mat(0xd8d3c7),trimMat=mat(0x68646a),deskMat=mat(0x76513a),paperMat=mat(0xf5edcf),oreoMat=mat(0x30251f),creamMat=mat(0xe8dfd2);
 const obstacles=[],steeringBounds=[],deskScoreBounds=[],items=[],survivors=[],teachers=[],lights=[],initialItems=[],itemRespawns=[];
 function box(x,y,z,w,h,d,m,solid=true,carveGroundScore=false){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=false;o.receiveShadow=false;scene.add(o);if(solid){const bounds=new THREE.Box3().setFromObject(o);obstacles.push(bounds);steeringBounds.push(bounds);if(carveGroundScore)deskScoreBounds.push(bounds);o.userData.avoidVector=true}return o}
-function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;steeringBounds.push(new THREE.Box3().setFromObject(o));return o}
+function wallBox(x,y,z,w,h,d){const o=box(x,y,z,w,h,d,wallMat,false);o.userData.avoidVector=true;o.userData.teacherIgnoreRaycast=true;/* Navigation deliberately ignores wall bounds so actors can pass through walls. */return o}
 function schoolTile(x,z){box(x,-.2,z,10,.4,10,floorMat,false);
  box(x,3.25,z,10,.18,10,wallMat,false); // solid school roof
 // Open room connections: no overlapping tile-boundary walls that cage the player.
@@ -336,7 +336,24 @@ function chooseSurvivorPolygonGoal(s){
 }
 function updateSurvivorWander(s,dt){
  const p=s.root.position;
- if(updateSurvivorCollecting(s,dt))return;
+ // Night threat response takes priority over collecting and roaming.
+ let threat=null,threatD=Infinity;
+ if(phaseTime>=DAY)for(const teacher of teachers){const d=Math.hypot(teacher.root.position.x-p.x,teacher.root.position.z-p.z);if(d<threatD){threatD=d;threat=teacher}}
+ if(threat&&threatD<13){
+  const tx=threat.root.position.x,tz=threat.root.position.z;
+  if(!s.fleeTarget||s.fleeFrom!==threat.key||elapsed>=(s.fleeRepathAt||0)||Math.hypot(p.x-s.fleeTarget.x,p.z-s.fleeTarget.z)<1.8){
+   let dx=p.x-tx,dz=p.z-tz,len=Math.hypot(dx,dz);
+   if(len<.001){const a=(s.phase||0)+elapsed;dx=Math.cos(a);dz=Math.sin(a);len=1}
+   dx/=len;dz/=len;
+   s.fleeTarget={x:p.x+dx*11,z:p.z+dz*11};s.fleeFrom=threat.key;s.fleeRepathAt=elapsed+.55;
+   s.wanderTarget=null;s.collectTarget=null;s.polyRoute=null;s.polyRouteIndex=0;s.polyRequestedGoal=undefined;
+  }
+  const fleeing=moveSurvivorPolygons(s,s.fleeTarget,dt,2.8);
+  const gait=Math.sin(elapsed*11+s.phase)*.48;
+  s.legs[0].rotation.x=fleeing?gait:0;s.legs[1].rotation.x=fleeing?-gait:0;s.arms[0].rotation.x=fleeing?-gait*.7:0;s.arms[1].rotation.x=fleeing?gait*.7:0;
+  return;
+ }
+ s.fleeTarget=null;s.fleeFrom=null; if(updateSurvivorCollecting(s,dt))return;
  if(!s.wanderTarget||Math.hypot(p.x-s.wanderTarget.x,p.z-s.wanderTarget.z)<.65||elapsed>(s.wanderUntil||0)){
   const current=teacherPolyAt(p.x,p.z),visited=s.polyVisited||(s.polyVisited=new Set());if(current>=0)visited.add(current);
   s.wanderTarget=chooseSurvivorPolygonGoal(s);s.wanderUntil=elapsed+7+Math.random()*7;s.polyGoal=-1;s.polyNext=-1;

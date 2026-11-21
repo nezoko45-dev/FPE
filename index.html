@@ -283,7 +283,7 @@ function updateTeacherPolygonRoam(t,dt){
 }
 function stepTeacher(t,dt){
  const p=t.root.position,ud=t.root.userData;
- if(phaseTime<DAY){ud.chaseTarget=null;ud.chaseActor=null;ud.chaseStartedAt=0;t.polyRoamGoal=null;brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(phaseTime<DAY){ud.chaseTarget=null;ud.chaseActor=null;ud.chaseStartedAt=0;t.polyRoamGoal=null;const homeDistance=Math.hypot(t.home.x-p.x,t.home.z-p.z);if(homeDistance>.55){const retreating=moveTeacherPolygons(t,t.home,dt,t.speed*1.15);if(t.animState!=='walk'&&retreating){t.animState='walk';teacherAnim(t,'walk')}else if(!retreating&&t.animState!=='walk'&&homeDistance>.55){t.animState='walk';teacherAnim(t,'walk')}}else{brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}}return}
  if(elapsed<(ud.stagger||0)){brakeTeacher(t,dt);if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const movingCandidates=()=>{const list=[];if(!dead&&elapsed<playerMovedUntil)list.push({actor:'player',pos:player.pos});for(const survivor of survivors)if(!survivor.dead&&elapsed<(survivor.moveDetectedUntil||0))list.push({actor:survivor,pos:survivor.root.position});return list};
  let actor=ud.chaseActor||null;if(actor==='player'){if(dead)actor=null}else if(actor&&actor.dead)actor=null;

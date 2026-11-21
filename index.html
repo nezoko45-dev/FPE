@@ -214,34 +214,47 @@ function steerGroundScores(agent,target,dt,speed){
  const angle=Math.atan2(dirX,dirZ),delta=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));root.rotation.y+=Math.max(-dt*9,Math.min(dt*9,delta));return true;
 }
 function groundScoreCellId(x,z){const ix=Math.floor((x-schoolScoreMinX)/SCHOOL_SCORE_CELL),iz=Math.floor((z-schoolScoreMinZ)/SCHOOL_SCORE_CELL);return ix<0||iz<0||ix>=schoolScoreCols||iz>=schoolScoreRows?-1:iz*schoolScoreCols+ix}
-function chooseGlobalGroundScoreGoal(t){
- if(!schoolScoreMap||schoolScoreTileCount!==generatedTiles.size||schoolScoreObstacleCount!==steeringBounds.length)rebuildSchoolScoreMap();
- const p=t.root.position,visited=t.groundVisited||(t.groundVisited=new Set()),current=groundScoreCellId(p.x,p.z);
- if(t.groundScoreVersion!==schoolScoreMapVersion){visited.clear();t.groundScoreVersion=schoolScoreMapVersion}if(current>=0)visited.add(current);
- let best=-1,bestScore=Infinity;const stride=2,seed=t.key==='circle'?0:t.key==='thavel'?1:2;
- for(let i=seed;i<schoolWaypointNodes.length;i+=stride){const cell=schoolWaypointNodes[i];if(visited.has(cell))continue;const x=schoolScoreMinX+((cell%schoolScoreCols)+.5)*SCHOOL_SCORE_CELL,z=schoolScoreMinZ+(((cell/schoolScoreCols)|0)+.5)*SCHOOL_SCORE_CELL,dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz);if(d<2.2||d>34)continue;const angle=Math.atan2(dx,dz),turn=Math.abs(Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y))),score=d+turn*1.6+Math.random()*.35;if(score<bestScore){bestScore=score;best=cell}}
- if(best<0){visited.clear();if(current>=0)visited.add(current);return null}
- const goal={x:schoolScoreMinX+((best%schoolScoreCols)+.5)*SCHOOL_SCORE_CELL,z:schoolScoreMinZ+(((best/schoolScoreCols)|0)+.5)*SCHOOL_SCORE_CELL,id:best};t.groundRoamGoal=goal;t.groundRoamAt=elapsed;t.groundRoamProgress=p.clone();return goal;
+function chooseTeacherPolygonGoal(t){
+ if(!teacherPolyMap||teacherPolySignature!==generatedTiles.size+':'+steeringBounds.length)buildTeacherPolygonMap();
+ const m=teacherPolyMap,p=t.root.position,current=teacherPolyAt(p.x,p.z);
+ if(current<0)return null;
+ const visited=t.polyVisited||(t.polyVisited=new Set());
+ if(t.polyVersion!==teacherPolyVersion){visited.clear();t.polyVersion=teacherPolyVersion;t.polyRoamGoal=null}
+ visited.add(current);
+ let best=-1,bestScore=Infinity;
+ const stride=3,seed=t.key==='circle'?0:t.key==='thavel'?1:2;
+ for(let id=seed;id<m.walk.length;id+=stride){
+  if(!m.walk[id]||visited.has(id))continue;
+  const x=m.originX+((id%m.cols)+.5)*TEACHER_POLY_SIZE,z=m.originZ+(((id/m.cols)|0)+.5)*TEACHER_POLY_SIZE;
+  const dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz);if(d<2.2||d>34)continue;
+  const angle=Math.atan2(dx,dz),turn=Math.abs(Math.atan2(Math.sin(angle-t.root.rotation.y),Math.cos(angle-t.root.rotation.y)));
+  const score=d+turn*1.6+Math.random()*.35;if(score<bestScore){bestScore=score;best=id}
+ }
+ if(best<0){visited.clear();visited.add(current);return null}
+ const goal={x:m.originX+((best%m.cols)+.5)*TEACHER_POLY_SIZE,z:m.originZ+(((best/m.cols)|0)+.5)*TEACHER_POLY_SIZE,id:best};
+ t.polyRoamGoal=goal;t.polyRoamAt=elapsed;t.polyRoamProgress=p.clone();return goal;
 }
-function updateTeacherGroundRoam(t,dt){
- const p=t.root.position,visited=t.groundVisited||(t.groundVisited=new Set()),cell=groundScoreCellId(p.x,p.z);
- if(t.groundScoreVersion!==schoolScoreMapVersion){visited.clear();t.groundScoreVersion=schoolScoreMapVersion;t.groundRoamGoal=null}
- if(cell>=0)visited.add(cell);
- let goal=t.groundRoamGoal;if(goal&&Math.hypot(goal.x-p.x,goal.z-p.z)<.7){visited.add(goal.id);goal=null}
- if(goal&&elapsed-(t.groundRoamAt||0)>2.2&&Math.hypot(p.x-t.groundRoamProgress.x,p.z-t.groundRoamProgress.z)<.22){visited.add(goal.id);goal=null}
- if(!goal)goal=chooseGlobalGroundScoreGoal(t);if(!goal){brakeTeacher(t,dt);return false}
- if(!t.groundRoamProgress||Math.hypot(p.x-t.groundRoamProgress.x,p.z-t.groundRoamProgress.z)>.22){t.groundRoamProgress=p.clone();t.groundRoamAt=elapsed}
+function updateTeacherPolygonRoam(t,dt){
+ const p=t.root.position,current=teacherPolyAt(p.x,p.z),visited=t.polyVisited||(t.polyVisited=new Set());
+ if(t.polyVersion!==teacherPolyVersion){visited.clear();t.polyVersion=teacherPolyVersion;t.polyRoamGoal=null}
+ if(current>=0)visited.add(current);
+ let goal=t.polyRoamGoal;
+ if(goal&&Math.hypot(goal.x-p.x,goal.z-p.z)<.7){visited.add(goal.id);goal=null}
+ if(goal&&elapsed-(t.polyRoamAt||0)>2.2&&t.polyRoamProgress&&Math.hypot(p.x-t.polyRoamProgress.x,p.z-t.polyRoamProgress.z)<.22){visited.add(goal.id);goal=null}
+ if(!goal)goal=chooseTeacherPolygonGoal(t);
+ if(!goal){brakeTeacher(t,dt);return false}
+ if(!t.polyRoamProgress||Math.hypot(p.x-t.polyRoamProgress.x,p.z-t.polyRoamProgress.z)>.22){t.polyRoamProgress=p.clone();t.polyRoamAt=elapsed}
  return moveTeacherPolygons(t,goal,dt,t.speed);
 }
 function stepTeacher(t,dt){
  const p=t.root.position,ud=t.root.userData;
- if(phaseTime<DAY){ud.chaseTarget=null;ud.chaseActor=null;ud.chaseStartedAt=0;t.groundRoamGoal=null;brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(phaseTime<DAY){ud.chaseTarget=null;ud.chaseActor=null;ud.chaseStartedAt=0;t.polyRoamGoal=null;brakeTeacher(t,dt);if(t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  if(elapsed<(ud.stagger||0)){brakeTeacher(t,dt);if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const movingCandidates=()=>{const list=[];if(!dead&&elapsed<playerMovedUntil)list.push({actor:'player',pos:player.pos});for(const survivor of survivors)if(!survivor.dead&&elapsed<(survivor.moveDetectedUntil||0))list.push({actor:survivor,pos:survivor.root.position});return list};
  let actor=ud.chaseActor||null;if(actor==='player'){if(dead)actor=null}else if(actor&&actor.dead)actor=null;
  if(!actor){ud.chaseActor=null;ud.chaseTarget=null;const candidates=movingCandidates();candidates.sort((a,b)=>p.distanceToSquared(a.pos)-p.distanceToSquared(b.pos));if(candidates.length){actor=candidates[0].actor;ud.chaseActor=actor;ud.chaseTarget=actor==='player'?player.pos:actor.root.position;ud.chaseStartedAt=elapsed}}
  else{const alternatives=movingCandidates().filter(c=>c.actor!==actor);if(alternatives.length&&elapsed-(ud.chaseStartedAt??elapsed)>=11){alternatives.sort((a,b)=>p.distanceToSquared(a.pos)-p.distanceToSquared(b.pos));actor=alternatives[0].actor;ud.chaseActor=actor;ud.chaseTarget=actor==='player'?player.pos:actor.root.position;ud.chaseStartedAt=elapsed}}
- if(!actor){const moved=updateTeacherGroundRoam(t,dt);if(t.animState!=='walk'&&moved){t.animState='walk';teacherAnim(t,'walk')}else if(!moved&&t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
+ if(!actor){const moved=updateTeacherPolygonRoam(t,dt);if(t.animState!=='walk'&&moved){t.animState='walk';teacherAnim(t,'walk')}else if(!moved&&t.animState!=='idle'){t.animState='idle';teacherAnim(t,'idle')}return}
  t.groundRoamGoal=null;const target=actor==='player'?player.pos:actor.root.position;ud.chaseTarget=target;const distance=Math.hypot(target.x-p.x,target.z-p.z);
  if(distance<1.8){brakeTeacher(t,dt);if(elapsed-(t.lastDamageAt??-999)>=.9){t.lastDamageAt=elapsed;if(actor==='player'){hp=Math.max(0,hp-20);if(hp<=0&&!dead){dead=true;respawnAt=elapsed+5;ud.chaseActor=null;ud.chaseTarget=null;document.querySelector('#msg').textContent='You were caught! Respawning in 5 seconds.'}}else{actor.hp=Math.max(0,(actor.hp??100)-20);if(actor.hp<=0){actor.dead=true;actor.respawn=elapsed+8;actor.root.visible=false;ud.chaseActor=null;ud.chaseTarget=null}}}if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const moved=moveTeacherPolygons(t,target,dt,t.speed);const state=distance<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}if(!moved&&distance>1.8&&t.animState!=='idle'&&t.polyRoute===null){t.animState='idle';teacherAnim(t,'idle')}
@@ -276,7 +289,7 @@ for(const s of survivors){
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 
-function newGame(){started=true;dead=false;playerMovedUntil=0;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.lastObservedPos=s.root.position.clone();s.moveDetectedUntil=0;s.wanderTarget=null;s.collectTarget=null;s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.root.userData.chaseActor=null;t.root.userData.chaseTarget=null;t.lastDamageAt=-999;t.groundVisited=new Set();t.groundScoreVersion=schoolScoreMapVersion;t.groundRoamGoal=null;t.polyRoute=null;t.polyGoal=-1;t.polyVersion=-1;t.polyRouteIndex=0;t.polyPrevious=-1;t.polyNext=-1;t.polyPortal=null;t.root.userData.groundScoreDirection=null;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
+function newGame(){started=true;dead=false;playerMovedUntil=0;respawnAt=0;hp=100;papers=0;oreos=0;elapsed=0;phaseTime=0;nightMix=0;lastAttack=-99;scene.background.copy(daySky);player.pos.set(0,0,0);player.yaw=0;player.pitch=0;camera.position.set(0,1.65,0);camera.rotation.set(0,0,0);for(const k in keys)keys[k]=false;items.forEach(it=>scene.remove(it.mesh));items.length=0;itemRespawns.length=0;initialItems.forEach(it=>spawnItem(it.kind,it.x,it.z,false));survivors.forEach((s,i)=>{s.dead=false;s.hp=100;s.root.visible=true;s.root.position.copy(findOpenSchoolPoint((i-1.5)*3,7+i,8));s.lastObservedPos=s.root.position.clone();s.moveDetectedUntil=0;s.wanderTarget=null;s.collectTarget=null;s.phase=0;s.moveDir.set(0,0,-1);s.root.userData.curvedVector=s.moveDir.clone();s.root.userData.avoidSides=new Map()});teachers.forEach(t=>{t.root.position.copy(t.home);t.root.userData.chaseActor=null;t.root.userData.chaseTarget=null;t.lastDamageAt=-999;t.polyVisited=new Set();t.polyVersion=teacherPolyVersion;t.polyRoamGoal=null;t.polyRoute=null;t.polyGoal=-1;t.polyVersion=-1;t.polyRouteIndex=0;t.polyPrevious=-1;t.polyNext=-1;t.polyPortal=null;t.root.userData.groundScoreDirection=null;t.velocity?.set(0,0,0);t.root.userData.stagger=0;t.attackAt=0;t.lastDamageAt=-999;t.previous.copy(t.home);teacherAnim(t,'idle')});document.querySelector('#msg').textContent='';document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()}document.querySelector('#play').onclick=newGame;
 const clock=new THREE.Clock();let loopFaults=0;function loop(){requestAnimationFrame(loop);try{const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);loopFaults=0}catch(err){console.error('FPE frame recovered:',err);if(++loopFaults>10){started=false;document.querySelector('#start').style.display='grid';document.querySelector('#msg').textContent='Game paused after repeated errors. Reload to recover.';loopFaults=0}}}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 </script>
 <!-- FPE day/night soundtrack -->

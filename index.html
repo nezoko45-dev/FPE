@@ -185,14 +185,14 @@ function buildTeacherPolygonRouteToPoint(start,x,z){
  const route=[];for(let id=best;id!==-1;id=parent[id])route.push(id);route.reverse();return {route,goal:best};
 }
 function moveTeacherPolygons(t,target,dt,speed){
- const p=t.root.position,start=teacherPolyAt(p.x,p.z),requestedGoal=teacherPolyAt(target.x,target.z);if(start<0)return false;
+ const p=t.root.position;let start=teacherPolyAt(p.x,p.z);const requestedGoal=teacherPolyAt(target.x,target.z);if(start<0){const m=teacherPolyMap;let best=-1,bestD=Infinity;for(let id=0;id<m.walk.length;id++)if(m.walk[id]){const x=m.originX+((id%m.cols)+.5)*TEACHER_POLY_SIZE,z=m.originZ+(((id/m.cols)|0)+.5)*TEACHER_POLY_SIZE,d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=id}}if(best<0)return false;p.x=m.originX+((best%m.cols)+.5)*TEACHER_POLY_SIZE;p.z=m.originZ+(((best/m.cols)|0)+.5)*TEACHER_POLY_SIZE;start=best;t.polyRoute=null;t.polyRouteIndex=0;}
  let goal=requestedGoal,route=null;
  if(goal>=0&&start===goal){t.polyPrevious=-1;t.polyNext=-1;t.polyGoal=goal;t.polyRoute=null;t.polyRouteIndex=0;return glideTeacherTo(t,target.x,target.z,dt,speed)}
- if(t.polyGoal!==goal||t.polyVersion!==teacherPolyVersion||!t.polyRoute){
+ if(t.polyRequestedGoal!==requestedGoal||t.polyVersion!==teacherPolyVersion||!t.polyRoute){
   route=goal>=0?buildTeacherPolygonRoute(start,goal):null;
   if(!route){const fallback=buildTeacherPolygonRouteToPoint(start,target.x,target.z);route=fallback.route;goal=fallback.goal;t.polyFallbackGoal=goal}
   else t.polyFallbackGoal=-1;
-  t.polyGoal=goal;t.polyVersion=teacherPolyVersion;t.polyRoute=route;t.polyRouteIndex=0;t.polyNext=-1;
+  t.polyGoal=goal;t.polyRequestedGoal=requestedGoal;t.polyVersion=teacherPolyVersion;t.polyRoute=route;t.polyRouteIndex=0;t.polyNext=-1;
  }
  route=t.polyRoute;if(!route||!route.length)return false;
  let index=t.polyRouteIndex||0;
@@ -303,7 +303,7 @@ function updateSurvivorCollecting(s,dt){
  const p=s.root.position;if(!items.length){s.collectTarget=null;return false}
  if(s.collectTarget&&!items.includes(s.collectTarget))s.collectTarget=null;
  if(s.collectTarget&&Math.hypot(p.x-s.collectTarget.mesh.position.x,p.z-s.collectTarget.mesh.position.z)<1.05){const it=s.collectTarget,idx=items.indexOf(it);if(idx>=0){scene.remove(it.mesh);items.splice(idx,1);itemRespawns.push({kind:it.kind,at:elapsed+10})}s.collectTarget=null;s.collectRepathAt=0;s.polyNext=-1;return true}
- if(!s.collectTarget||elapsed>=(s.collectRepathAt||0)){let best=null,bestD=Infinity;for(const it of items){const x=it.mesh.position.x,z=it.mesh.position.z;if(teacherPolyAt(x,z)<0)continue;const d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=it}}s.collectTarget=best;s.collectRepathAt=elapsed+1.1;s.polyGoal=-1;s.polyNext=-1}
+ if(!s.collectTarget||elapsed>=(s.collectRepathAt||0)){let best=null,bestD=Infinity;for(const it of items){const x=it.mesh.position.x,z=it.mesh.position.z;const d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=it}}s.collectTarget=best;s.collectRepathAt=elapsed+1.1;s.polyGoal=-1;s.polyRequestedGoal=undefined;s.polyRoute=null;s.polyNext=-1}
  if(!s.collectTarget)return false;
  // Keep collection ownership while a target exists; otherwise wander resets the
  // polygon route every frame and interrupts the collector's dt-based movement.

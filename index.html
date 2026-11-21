@@ -3,7 +3,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;background:#111;color:#fff;font:15px system-ui}canvas{display:block}#hud{position:fixed;z-index:3;top:12px;left:12px;background:#101722dd;border:1px solid #ffffff35;border-radius:10px;padding:12px 16px;min-width:220px;line-height:1.65}#hud b{color:#ffe36a}#msg{color:#ff8c8c}#start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#10131beF}#panel{max-width:560px;padding:32px;background:#202635;border:1px solid #ffffff35;border-radius:16px;text-align:center}button{font:inherit;font-weight:700;padding:12px 24px;border:0;border-radius:9px;background:#f0d65a;color:#181818;cursor:pointer}#hint{opacity:.75;font-size:13px}
 </style></head><body>
-<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span><br><button id="scoreToggle" style="padding:6px 10px;margin-top:6px">Ground Scores: OFF (H)</button></div>
+<div id="hud">FPE: REBUILT<br>Health: <b id="hp">100</b><br>Papers: <b id="papers">0</b> · Oreos: <b id="oreos">0</b><br>Phase: <b id="phase">DAY</b> · <b id="timer">2:30</b><br><span id="msg"></span></div>
 <div id="start"><div id="panel"><h1>FUNDAMENTAL PAPER EDUCATION</h1><h2>REBUILT</h2><p>Fresh world architecture · same survival loop</p><p>Explore new chunks for papers and Oreos. Press E near pickups. Survive the teachers.</p><button id="play">NEW GAME</button><p id="hint">WASD move · Mouse look · Shift sprint · E collect / attack · Esc release mouse</p></div></div>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"}}
@@ -67,16 +67,6 @@ loadTeacher('circle');loadTeacher('thavel');loadTeacher('bloomie');
 function teacherAnim(t,kind){if(!t||!t.mixer||!t.clips?.length)return;const patterns=kind==='attack'?['attack','hit','slap']:kind==='run'?['run','sprint']:kind==='walk'?['walk','move']:['idle','stand'];let clip=t.clips.find(a=>patterns.some(p=>a.name.toLowerCase().includes(p)));if(!clip)clip=t.clips[0];if(t.active===clip)return;t.mixer.stopAllAction();const action=t.mixer.clipAction(clip);action.reset().fadeIn(.18).play();t.active=clip;}
 // Expose animation controller on window so stale/isolated module callers can resolve it.
 window.teacherAnim=teacherAnim;
-let showGroundScores=false;const groundScoreViz=new THREE.Group();scene.add(groundScoreViz);let groundScoreVizVersion=-1;
-function toggleGroundScores(){showGroundScores=!showGroundScores;document.querySelector('#scoreToggle').textContent='Ground Scores: '+(showGroundScores?'ON':'OFF')+' (H)';groundScoreViz.visible=showGroundScores;if(showGroundScores)drawGroundScores()}
-document.querySelector('#scoreToggle').onclick=toggleGroundScores;
-function drawGroundScores(){
- for(const child of groundScoreViz.children){child.geometry?.dispose();child.material?.dispose()}groundScoreViz.clear();if(!showGroundScores)return;
- if(!schoolScoreMap)rebuildSchoolScoreMap();
- const positions=[],colors=[],stride=Math.max(1,Math.ceil(Math.max(schoolScoreCols,schoolScoreRows)/280));
- for(let iz=0;iz<schoolScoreRows;iz+=stride)for(let ix=0;ix<schoolScoreCols;ix+=stride){const id=iz*schoolScoreCols+ix;positions.push(schoolScoreMinX+(ix+.5)*SCHOOL_SCORE_CELL,.045,schoolScoreMinZ+(iz+.5)*SCHOOL_SCORE_CELL);if(schoolScoreMap[id])colors.push(.18,.95,.38);else colors.push(1,.12,.12)}
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));groundScoreViz.add(new THREE.Points(geo,new THREE.PointsMaterial({size:.19,vertexColors:true,sizeAttenuation:true})));groundScoreVizVersion=schoolScoreMapVersion;
-}
 const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE'){collectNearby();attack();}if(e.code==='KeyH')toggleGroundScores()});addEventListener('keyup',e=>keys[e.code]=false);
 let locked=false;renderer.domElement.addEventListener('click',()=>{if(started)renderer.domElement.requestPointerLock()});document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener('mousemove',e=>{if(!locked||!started)return;player.yaw-=e.movementX*.0022;player.pitch-=e.movementY*.002;player.pitch=Math.max(-1.35,Math.min(1.35,player.pitch));camera.rotation.set(player.pitch,player.yaw,0)});
@@ -282,7 +272,7 @@ for(const s of survivors){
  s.lastObservedPos.copy(s.root.position);
  s.root.position.y=0;
  }
- for(const it of items){it.mesh.rotation.y+=dt*.7}if(showGroundScores&&groundScoreVizVersion!==schoolScoreMapVersion)drawGroundScores()
+ for(const it of items){it.mesh.rotation.y+=dt*.7}
 document.querySelector('#hp').textContent=hp;document.querySelector('#papers').textContent=papers;document.querySelector('#oreos').textContent=oreos;document.querySelector('#phase').textContent=phaseTime<DAY?'DAY':'NIGHT';const remain=phaseTime<DAY?DAY-phaseTime:DAY+NIGHT-phaseTime;document.querySelector('#timer').textContent=Math.floor(remain/60)+':'+String(Math.floor(remain%60)).padStart(2,'0');
 }
 

@@ -274,15 +274,22 @@ function stepTeacher(t,dt){
  if(distance<1.8){brakeTeacher(t,dt);if(elapsed-(t.lastDamageAt??-999)>=.9){t.lastDamageAt=elapsed;if(actor==='player'){hp=Math.max(0,hp-20);if(hp<=0&&!dead){dead=true;respawnAt=elapsed+5;ud.chaseActor=null;ud.chaseTarget=null;document.querySelector('#msg').textContent='You were caught! Respawning in 5 seconds.'}}else{actor.hp=Math.max(0,(actor.hp??100)-20);if(actor.hp<=0){actor.dead=true;actor.respawn=elapsed+8;actor.root.visible=false;ud.chaseActor=null;ud.chaseTarget=null}}}if(t.animState!=='attack'){t.animState='attack';teacherAnim(t,'attack')}return}
  const moved=moveTeacherPolygons(t,target,dt,t.speed);const state=distance<(t.animState==='run'?20:16)?'run':'walk';if(state!==t.animState){t.animState=state;teacherAnim(t,state)}if(!moved&&distance>1.8&&t.animState!=='idle'&&t.polyRoute===null){t.animState='idle';teacherAnim(t,'idle')}
 }
+function moveSurvivorPolygons(s,target,dt,speed){
+ // Survivor speeds are world-units per second; multiply by the frame delta exactly once.
+ const frameDt=Number.isFinite(dt)?Math.max(0,Math.min(dt,.05)):0;
+ return moveTeacherPolygons(s,target,frameDt,speed);
+}
 function updateSurvivorCollecting(s,dt){
  const p=s.root.position;if(!items.length){s.collectTarget=null;return false}
  if(s.collectTarget&&!items.includes(s.collectTarget))s.collectTarget=null;
  if(s.collectTarget&&Math.hypot(p.x-s.collectTarget.mesh.position.x,p.z-s.collectTarget.mesh.position.z)<1.05){const it=s.collectTarget,idx=items.indexOf(it);if(idx>=0){scene.remove(it.mesh);items.splice(idx,1);itemRespawns.push({kind:it.kind,at:elapsed+10})}s.collectTarget=null;s.collectRepathAt=0;s.polyNext=-1;return true}
  if(!s.collectTarget||elapsed>=(s.collectRepathAt||0)){let best=null,bestD=Infinity;for(const it of items){const x=it.mesh.position.x,z=it.mesh.position.z;if(teacherPolyAt(x,z)<0)continue;const d=(x-p.x)**2+(z-p.z)**2;if(d<bestD){bestD=d;best=it}}s.collectTarget=best;s.collectRepathAt=elapsed+1.1;s.polyGoal=-1;s.polyNext=-1}
  if(!s.collectTarget)return false;
- // Survivors use the same adjacent-polygon portal traversal as teachers when collecting.
- const moved=moveTeacherPolygons(s,s.collectTarget.mesh.position,dt,2.0);
- if(moved){const gait=Math.sin(elapsed*8+s.phase)*.38;s.legs[0].rotation.x=gait;s.legs[1].rotation.x=-gait;s.arms[0].rotation.x=-gait*.55;s.arms[1].rotation.x=gait*.55}return moved;
+ // Keep collection ownership while a target exists; otherwise wander resets the
+ // polygon route every frame and interrupts the collector's dt-based movement.
+ const moved=moveSurvivorPolygons(s,s.collectTarget.mesh.position,dt,2.0);
+ if(moved){const gait=Math.sin(elapsed*8+s.phase)*.38;s.legs[0].rotation.x=gait;s.legs[1].rotation.x=-gait;s.arms[0].rotation.x=-gait*.55;s.arms[1].rotation.x=gait*.55}
+ return true;
 }
 function chooseSurvivorPolygonGoal(s){
  if(!teacherPolyMap||teacherPolySignature!==generatedTiles.size+':'+steeringBounds.length)buildTeacherPolygonMap();
@@ -315,7 +322,7 @@ function updateSurvivorWander(s,dt){
   s.wanderTarget=chooseSurvivorPolygonGoal(s);s.wanderUntil=elapsed+7+Math.random()*7;s.polyGoal=-1;s.polyNext=-1;
  }
  let moved=false;
- if(s.wanderTarget)moved=moveTeacherPolygons(s,s.wanderTarget,dt,1.35);
+ if(s.wanderTarget)moved=moveSurvivorPolygons(s,s.wanderTarget,dt,1.35);
  else{ s.wanderTarget=null; s.polyNext=-1; }
  const gait=Math.sin(elapsed*8+s.phase)*.38;
  s.legs[0].rotation.x=moved?gait:0;s.legs[1].rotation.x=moved?-gait:0;s.arms[0].rotation.x=moved?-gait*.55:0;s.arms[1].rotation.x=moved?gait*.55:0;
